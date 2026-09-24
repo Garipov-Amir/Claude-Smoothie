@@ -1,0 +1,5 @@
+# For scripts/image_prep.py (runs under system python3, not Blender's bpy python)
+Pillow>=10.0
+
+# Only needed for the optional live-viewing connector, mcp_server/server.py
+mcp>=1.0
