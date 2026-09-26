@@ -46,7 +46,7 @@ def skeleton(arm_angle=45.0):
     J["upperarm_l"] = _v(0.188, 0.012, 1.446)
     a = math.radians(arm_angle)
     d_up = normalize(_v(math.cos(a), 0.015, -math.sin(a)))
-    J["lowerarm_l"] = J["upperarm_l"] + d_up * 0.290
+    J["lowerarm_l"] = J["upperarm_l"] + d_up * 0.310
     d_lo = normalize(_v(math.cos(a) * 0.98, -0.12, -math.sin(a)))  # slight elbow bend forward
     J["hand_l"] = J["lowerarm_l"] + d_lo * 0.262
 
@@ -86,29 +86,32 @@ def build_body(m: SDFModel, J, detail=True):
 
     # ---------------- torso ----------------
     # ribcage: egg-shaped, tilted so the back is more upright than the chest
-    m.add(Ellipsoid((0, 0.014, 1.300), (0.124, 0.100, 0.172), euler_matrix(-6, 0, 0)), k=0.0)
+    m.add(Ellipsoid((0, 0.014, 1.300), (0.138, 0.105, 0.175), euler_matrix(-6, 0, 0)), k=0.0)
     # pectoral masses (fan from sternum to the armpit)
     # male pectorals: broad, flat, squarish plates (not rounded mounds)
     m.add(Ellipsoid((0.066, -0.070, 1.352), (0.084, 0.022, 0.052), euler_matrix(0, 8, -14)), k=0.06, sym=True)
     # chest front plane: fills the crease under the pecs so the chest reads as
     # one flat masculine plane (and the leather jerkin hangs from it)
-    m.add(Ellipsoid((0, -0.010, 1.275), (0.122, 0.084, 0.150)), k=0.06)
+    m.add(Ellipsoid((0, -0.010, 1.275), (0.132, 0.090, 0.150)), k=0.06)
     # lats: the V-taper from armpit to lower back
-    m.add(Ellipsoid((0.100, 0.040, 1.285), (0.042, 0.075, 0.135), euler_matrix(0, -8, 6)), k=0.05, sym=True)
+    m.add(Ellipsoid((0.108, 0.040, 1.285), (0.050, 0.088, 0.140), euler_matrix(0, -8, 6)), k=0.05, sym=True)
+    # outer pec / serratus corner: squares off the chest section (a male
+    # chest is closer to a rounded box than an ellipse in cross-section)
+    m.add(Ellipsoid((0.105, -0.045, 1.300), (0.035, 0.040, 0.070)), k=0.045, sym=True)
     # serratus / side ribs
     # abdomen + rectus abdominis
-    m.add(Ellipsoid((0, 0.004, 1.125), (0.114, 0.086, 0.130)), k=0.07)
+    m.add(Ellipsoid((0, 0.004, 1.120), (0.122, 0.094, 0.135)), k=0.07)
     m.add(Ellipsoid((0, -0.058, 1.135), (0.068, 0.034, 0.125)), k=0.05)
     # lower-rib flank fill (male torso: straighter line from lats to hips)
     m.add(Ellipsoid((0.100, 0.004, 1.190), (0.036, 0.070, 0.075)), k=0.05, sym=True)
     # obliques over the iliac crest
-    m.add(Ellipsoid((0.106, 0.006, 1.062), (0.036, 0.060, 0.060)), k=0.05, sym=True)
+    m.add(Ellipsoid((0.104, 0.004, 1.068), (0.040, 0.076, 0.066)), k=0.05, sym=True)
     # pelvis block
-    m.add(Ellipsoid((0, 0.010, 0.965), (0.130, 0.094, 0.098)), k=0.07)
+    m.add(Ellipsoid((0, 0.010, 0.965), (0.122, 0.094, 0.098)), k=0.07)
     # lower belly
     m.add(Ellipsoid((0, -0.050, 0.995), (0.085, 0.045, 0.070)), k=0.05)
     # glutes
-    m.add(Ellipsoid((0.070, 0.058, 0.905), (0.078, 0.066, 0.098), euler_matrix(0, 10, 0)), k=0.045, sym=True)
+    m.add(Ellipsoid((0.064, 0.064, 0.905), (0.074, 0.076, 0.100), euler_matrix(0, 10, 0)), k=0.045, sym=True)
     # erector spinae columns + spine groove
     m.add(Ellipsoid((0.030, 0.078, 1.150), (0.030, 0.030, 0.150)), k=0.04, sym=True)
     # trapezius: slope from neck to shoulder, plus the upper-back diamond
@@ -139,8 +142,8 @@ def build_body(m: SDFModel, J, detail=True):
         m.add(Ellipsoid(S + au * 0.030 + _v(0.008, 0, 0.004), (0.050, 0.055, 0.080), Ru), k=0.035, sym=True)
         m.add(RoundCone(S + au * 0.02, E, 0.043, 0.034), k=0.03, sym=True)
         # biceps (front) / triceps (back)
-        m.add(Ellipsoid(lerp(S, E, 0.56) + fwd * 0.016, (0.030, 0.032, 0.085), Ru), k=0.025, sym=True)
-        m.add(Ellipsoid(lerp(S, E, 0.42) - fwd * 0.018, (0.036, 0.034, 0.095), Ru), k=0.025, sym=True)
+        m.add(Ellipsoid(lerp(S, E, 0.56) + fwd * 0.017, (0.034, 0.035, 0.090), Ru), k=0.025, sym=True)
+        m.add(Ellipsoid(lerp(S, E, 0.42) - fwd * 0.019, (0.038, 0.036, 0.100), Ru), k=0.025, sym=True)
         # elbow + olecranon
         m.add(Ellipsoid(E - fwd * 0.012, (0.030, 0.030, 0.032), Rl), k=0.02, sym=True)
         # forearm: flexor/extensor mass near the elbow tapering to a flat wrist
@@ -158,21 +161,27 @@ def build_body(m: SDFModel, J, detail=True):
     Rc = frame_from_axis(ac, up=(0, -1, 0))
     inward = _v(-1, 0, 0)
     fwd = _v(0, -1, 0)
-    m.add(RoundCone(H + _v(0.010, 0, 0.02), K, 0.078, 0.047), k=0.05, sym=True)
+    m.add(RoundCone(H + _v(-0.006, 0, 0.02), K, 0.080, 0.049), k=0.05, sym=True)
     # quadriceps (rectus femoris + vastus lateralis), teardrop vastus medialis
-    m.add(Ellipsoid(lerp(H, K, 0.50) + fwd * 0.030, (0.050, 0.045, 0.170), Rt), k=0.04, sym=True)
+    m.add(Ellipsoid(lerp(H, K, 0.50) + fwd * 0.032, (0.054, 0.048, 0.175), Rt), k=0.04, sym=True)
     m.add(Ellipsoid(lerp(H, K, 0.48) - inward * 0.034 + fwd * 0.006, (0.042, 0.050, 0.170), Rt), k=0.04, sym=True)
     m.add(Ellipsoid(K + _v(-0.024, -0.030, 0.085), (0.033, 0.032, 0.060), Rt), k=0.03, sym=True)
     # hamstrings / adductors
-    m.add(Ellipsoid(lerp(H, K, 0.45) - fwd * 0.032, (0.050, 0.042, 0.165), Rt), k=0.04, sym=True)
-    m.add(Ellipsoid(lerp(H, K, 0.24) + inward * 0.030, (0.038, 0.050, 0.105), Rt), k=0.035, sym=True)
+    m.add(Ellipsoid(lerp(H, K, 0.45) - fwd * 0.034, (0.054, 0.045, 0.170), Rt), k=0.04, sym=True)
+    m.add(Ellipsoid(lerp(H, K, 0.28) + inward * 0.026, (0.045, 0.060, 0.120), Rt), k=0.035, sym=True)
+    # upper thigh mass (sartorius / rectus origin) fills the section below the fold
+    m.add(Ellipsoid(lerp(H, K, 0.24) + fwd * 0.032, (0.056, 0.046, 0.115), Rt), k=0.04, sym=True)
+    # upper hamstrings under the gluteal fold
+    m.add(Ellipsoid(lerp(H, K, 0.30) - fwd * 0.036 - inward * 0.008, (0.050, 0.044, 0.110), Rt), k=0.04, sym=True)
     # knee
     m.add(Ellipsoid(K + _v(0, -0.038, 0.012), (0.024, 0.016, 0.028)), k=0.02, sym=True)
     m.add(Ellipsoid(K, (0.046, 0.044, 0.050)), k=0.03, sym=True)
     # lower leg: calf heads + tibia
-    m.add(RoundCone(K, A + _v(0, 0, 0.02), 0.044, 0.026), k=0.04, sym=True)
-    m.add(Ellipsoid(lerp(K, A, 0.26) - fwd * 0.032 - inward * 0.012, (0.032, 0.030, 0.090), Rc), k=0.03, sym=True)
-    m.add(Ellipsoid(lerp(K, A, 0.24) - fwd * 0.030 + inward * 0.014, (0.034, 0.032, 0.085), Rc), k=0.03, sym=True)
+    m.add(RoundCone(K, A + _v(0, 0, 0.02), 0.046, 0.034), k=0.04, sym=True)
+    m.add(Ellipsoid(lerp(K, A, 0.27) - fwd * 0.034 - inward * 0.013, (0.037, 0.035, 0.095), Rc), k=0.03, sym=True)
+    m.add(Ellipsoid(lerp(K, A, 0.25) - fwd * 0.032 + inward * 0.015, (0.039, 0.037, 0.090), Rc), k=0.03, sym=True)
+    # Achilles tendon: the back of the ankle
+    m.add(RoundCone(lerp(K, A, 0.62) - fwd * 0.030, A - fwd * 0.030 + _v(0, 0, -0.03), 0.011, 0.010), k=0.02, sym=True)
     m.add(Ellipsoid(lerp(K, A, 0.35) + fwd * 0.012, (0.024, 0.030, 0.140), Rc), k=0.03, sym=True)
     # thigh gap: keep the inner thighs apart below the crotch (they would
     # fuse once trousers add their ease, and retopo needs a clean crotch)
@@ -373,10 +382,10 @@ def build_head(m: SDFModel, J, detail=True):
 
 
 FINGERS = [  # (name, offset along the thumb axis, phalanx lengths, base radius)
-    ("index", 0.0255, (0.044, 0.026, 0.021), 0.0090),
-    ("middle", 0.0085, (0.049, 0.030, 0.023), 0.0092),
-    ("ring", -0.0085, (0.046, 0.028, 0.022), 0.0086),
-    ("pinky", -0.0250, (0.036, 0.021, 0.019), 0.0076),
+    ("index", 0.0255, (0.041, 0.025, 0.020), 0.0090),
+    ("middle", 0.0085, (0.045, 0.028, 0.021), 0.0092),
+    ("ring", -0.0085, (0.043, 0.026, 0.020), 0.0086),
+    ("pinky", -0.0250, (0.034, 0.020, 0.018), 0.0076),
 ]
 THUMB = ((0.040, 0.030, 0.026), 0.0125)
 

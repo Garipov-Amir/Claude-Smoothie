@@ -312,8 +312,10 @@ def build_arm(C, J, surf, side, ring0):
     pn = mirror_vec(J["_palm_n_l"], side)
     L_up = np.linalg.norm(E - S)
     L_lo = np.linalg.norm(W - E)
-    # rows: distance from the shoulder joint along the arm polyline
-    rows = [0.035, 0.085, 0.140, 0.195, 0.240, 0.272, 0.290, 0.308, 0.340, 0.395, 0.450, 0.500, 0.537, 0.552]
+    # rows: fractions of the upper arm (u) / forearm (l), bracketing the elbow
+    fr = [("u", 0.12), ("u", 0.29), ("u", 0.48), ("u", 0.67), ("u", 0.83), ("u", 0.94), ("u", 1.0),
+          ("l", 0.07), ("l", 0.19), ("l", 0.40), ("l", 0.61), ("l", 0.80), ("l", 0.94), ("l", 1.0)]
+    rows = [t * L_up if seg == "u" else L_up + t * L_lo for seg, t in fr]
     prev = ring0
     label = lab(ARM, side)
     under = [ring0[7]]
