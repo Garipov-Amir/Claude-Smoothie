@@ -127,12 +127,23 @@ def from_reference(ref, J):
     skull = P[(P[:, 2] > eye[2]) & (np.abs(P[:, 0]) < 0.12)]
     yc = 0.5 * (skull[:, 1].min() + skull[:, 1].max())
     L["head_c"] = _v(0, yc, eye[2] + 0.005)
-    L["brow_z"] = eye[2] + 0.022
-    # neck: base (sternal notch height) and axis
-    L["neck_axis_y"] = float(J["neck_01"][1])
-    L["neck_base_z"] = float(J["neck_01"][2]) - 0.075
     L["chin_z"] = float(L["chin"][2])
+    sh = (L["head_top"] - L["chin_z"]) / 0.237          # head size relative to the Ranger's
+    L["brow_z"] = eye[2] + 0.022 * sh
+    # neck: base (sternal notch height, ~0.72 neck-joint-to-head lengths under
+    # the neck joint) and axis
+    L["neck_axis_y"] = float(J["neck_01"][1])
+    L["neck_base_z"] = float(J["neck_01"][2]) - 0.72 * float(np.linalg.norm(J["head"] - J["neck_01"]))
     L["shoulder_z"] = float(J["upperarm_l"][2])
+    # limb radii (median skin distance from the bone, mid-segment)
+    for nm, a, b in (("r_upperarm", "upperarm_l", "lowerarm_l"), ("r_forearm", "lowerarm_l", "hand_l"),
+                     ("r_thigh", "thigh_l", "calf_l"), ("r_calf", "calf_l", "foot_l")):
+        A, B = np.asarray(J[a], float), np.asarray(J[b], float)
+        ab = B - A
+        t = ((P - A) @ ab) / float(ab @ ab)
+        d = np.linalg.norm(P - (A + np.clip(t, 0, 1)[:, None] * ab), axis=1)
+        sel = (t > 0.35) & (t < 0.65) & (d < 0.25 * np.linalg.norm(ab) + 0.06) & (P[:, 0] > 0.02)
+        L[nm] = float(np.median(d[sel])) if sel.sum() > 20 else 0.05
     return L
 
 
@@ -146,6 +157,28 @@ def procedural_defaults(J):
         "head_c": _v(0, 0.010, 1.690), "brow_z": 1.7065, "neck_axis_y": 0.02, "neck_base_z": 1.475,
         "chin_z": 1.566, "shoulder_z": float(J["upperarm_l"][2]),
     }
+
+
+RANGER_RADII = {"r_upperarm": 0.048, "r_forearm": 0.034, "r_thigh": 0.091, "r_calf": 0.055}
+
+
+def scales(L, J):
+    """Body-relative sizes the costume and textures scale by (1.0 = the
+    Ranger: 1.80 m, head 23.7 cm, foot 14.3 cm ankle-to-ball)."""
+    stature = float(L["head_top"])
+    pelvis, sp1 = float(J["pelvis"][2]), float(J["spine_01"][2])
+    A, B = np.asarray(J["foot_l"], float), np.asarray(J["ball_l"], float)
+    out = {
+        "stature": stature,
+        "s_body": stature / 1.80,
+        "s_head": (float(L["head_top"]) - float(L["chin_z"])) / 0.237,
+        "s_foot": float(np.linalg.norm(B - A)) / 0.1426,
+        "belt_z": pelvis + 0.42 * (sp1 - pelvis),       # natural waistline, over the iliac crest
+    }
+    for k, v in RANGER_RADII.items():
+        out.setdefault(k, L.get(k, v * out["s_body"]))
+        out["s_" + k[2:]] = out[k] / v                   # limb thickness relative to the Ranger's
+    return out
 
 
 def eye_margin(model_body, eye_c, r_eye, n=48):

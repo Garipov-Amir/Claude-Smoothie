@@ -464,17 +464,26 @@ BOUNDS = ((-0.82, -0.46, -0.03), (0.82, 0.22, 1.84))
 REF_CACHE = os.environ.get("GC_REF_CACHE", os.path.expanduser("~/.cache/game_character_ref"))
 
 
-def build(arm_angle=45.0, clothing=True, hair=True, body="reference"):
-    """body="reference": anatomy from the CC0 MakeHuman reference body (see
-    reference_body.py) + this pipeline's eyes, clothing, gear and hair.
-    body="procedural": the original primitive-sculpted body."""
+def build(S=None, clothing=True, hair=True, body="reference", arm_angle=45.0):
+    """The sculpt for a character spec (spec.SPEC / spec.DEFAULT if None).
+
+    body="reference": anatomy from the CC0 MakeHuman reference body shaped by
+    S["body"] (see reference_body.py) + this pipeline's eyes, clothing, gear
+    and hair from S. body="procedural": the original primitive-sculpted
+    body (fixed proportions; the spec's outfit/colors still apply)."""
+    import spec as SP
     from landmarks import LM
     import landmarks
+    if S is None:
+        S = SP.SPEC if SP.SPEC else SP.resolve({})
+    elif "outfit" not in S or "body" not in S:
+        S = SP.resolve(S)
+    SP.use(S)
     LM.clear()
     m = SDFModel()
     if body == "reference":
         import reference_body as RB
-        ref = RB.build(REF_CACHE, full=True)
+        ref = RB.build(REF_CACHE, S["body"], full=True)
         pts, nrm = RB.surface_samples(ref, REF_CACHE)
         J = landmarks.skeleton_from_reference(ref)
         m.add(RB.MeshSDF(pts, nrm))
@@ -490,17 +499,29 @@ def build(arm_angle=45.0, clothing=True, hair=True, body="reference"):
             m.add(Ellipsoid(tuple(c), (r, r, r)), k=0.0)
         # perineum height: first surface point going up the midline
         from sdf import sample
-        zz = np.arange(0.5, 1.0, 0.001, dtype=np.float32)
+        hz = float(J["thigh_l"][2])
+        zz = np.arange(0.4 * hz, hz + 0.05, 0.001, dtype=np.float32)
         col = np.stack([np.zeros_like(zz), np.full_like(zz, float(J["pelvis"][1])), zz], 1)
         inside = np.nonzero(sample(body_only, col) < 0)[0]
-        LM["crotch_z"] = float(zz[inside[0]]) if len(inside) else 0.84
+        LM["crotch_z"] = float(zz[inside[0]]) if len(inside) else 0.875 * hz
+        used = np.unique(np.concatenate([np.array(f) for f in ref["faces"]]))
+        P = ref["verts"][used]
+        LM["bounds"] = (tuple(P.min(0) - np.array([0.06, 0.06, 0.03])), tuple(P.max(0) + np.array([0.06, 0.06, 0.07])))
     else:
         J = skeleton(arm_angle)
         build_body(m, J)
         LM.update(landmarks.procedural_defaults(J))
+        LM["bounds"] = BOUNDS
+    LM.update(landmarks.scales(LM, J))
     LM["J"] = J
     LM["body"] = body
     if clothing:
         import costume
-        costume.dress(m, J, hair_on=hair)
+        costume.dress(m, J, S, hair_on=hair)
     return m, J
+
+
+def bounds():
+    """Polygonization box of the current character (after build())."""
+    from landmarks import LM
+    return LM.get("bounds", BOUNDS)

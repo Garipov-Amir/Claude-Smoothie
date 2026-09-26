@@ -156,6 +156,8 @@ def resolve(user=None):
     b = S["body"]
     for k, lo, hi in (("sex", 0, 1), ("muscle", 0, 1), ("weight", 0, 1), ("proportions", 0, 1),
                       ("age", 1, 90), ("height_m", 0.5, 2.6)):
+        if k == "height_m" and b[k] is None:      # MakeHuman's own stature for this age/sex
+            continue
         if not (lo <= float(b[k]) <= hi):
             raise SpecError(f"body.{k} = {b[k]} outside {lo}..{hi}")
     eth = {k: float(b["ethnicity"].get(k, 0.0)) for k in ("african", "asian", "caucasian")}
