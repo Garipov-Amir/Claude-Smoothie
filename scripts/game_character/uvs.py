@@ -17,9 +17,12 @@ import numpy as np
 from mathutils import Vector
 
 
-def _edit(obj):
+def _edit(obj, others=()):
+    """Edit mode on obj (+ others: multi-object editing, so UV operators
+    such as average-scale and pack treat all their islands as one atlas)."""
+    objs = [obj, *others]
     for o in bpy.context.view_layer.objects:
-        o.select_set(o == obj)
+        o.select_set(o in objs)
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -48,15 +51,27 @@ def islands(bm, uv):
     return out
 
 
-def unwrap(obj, head_scale=1.6, head_min_z=1.50, margin=0.0035, iterations=0):
+def unwrap(obj, head_scale=1.6, head_min_z=None, margin=0.0035, extras=()):
     """ABF unwrap along the marked seams, equalize texel density, give the
     head islands `head_scale` x density (faces are what players look at),
-    then pack into 0-1."""
+    then pack into 0-1. `extras` (separate gear pieces) are smart-projected
+    and packed into the same atlas."""
+    if head_min_z is None:
+        from landmarks import LM
+        head_min_z = LM.get("chin_z", 1.57) - 0.07
     me = obj.data
     if not me.uv_layers:
         me.uv_layers.new(name="UVMap")
     _edit(obj)
     bpy.ops.uv.unwrap(method="ANGLE_BASED", fill_holes=True, correct_aspect=True, margin=0.001)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for x in extras:
+        if not x.data.uv_layers:
+            x.data.uv_layers.new(name="UVMap")
+        _edit(x)
+        bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.0, correct_aspect=True)
+        bpy.ops.object.mode_set(mode="OBJECT")
+    _edit(obj, extras)
     bpy.ops.uv.average_islands_scale()
     bpy.ops.object.mode_set(mode="OBJECT")
 
@@ -76,7 +91,7 @@ def unwrap(obj, head_scale=1.6, head_min_z=1.50, margin=0.0035, iterations=0):
     bm.to_mesh(me)
     bm.free()
 
-    _edit(obj)
+    _edit(obj, extras)
     try:
         bpy.ops.uv.pack_islands(udim_source="CLOSEST_UDIM", rotate=True, rotate_method="CARDINAL",
                                 scale=True, merge_overlap=False, margin_method="FRACTION",

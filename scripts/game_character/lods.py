@@ -106,6 +106,8 @@ def mesh_report(obj):
             poles[val] = poles.get(val, 0) + 1
     bm.free()
     r = {
+        "watertight": len(boundary) == 0 and len(nonman) == 0,
+        "self_intersecting_face_pairs": self_intersections(obj),
         "verts": len(me.vertices), "faces": len(me.polygons), "tris": int((sizes - 2).sum()),
         "quads": int((sizes == 4).sum()), "ngons": int((sizes > 4).sum()), "triangles": int((sizes == 3).sum()),
         "non_manifold_edges": len(nonman), "boundary_edges": len(boundary),
@@ -118,6 +120,22 @@ def mesh_report(obj):
     if me.uv_layers:
         r.update(uv_report(obj))
     return r
+
+
+def self_intersections(obj):
+    """Face pairs that cut through each other (sharing no vertex) — in a
+    render they show up as tears/holes where one surface pokes through."""
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    bvh = BVHTree.FromBMesh(bm)
+    n = 0
+    for a, b in bvh.overlap(bvh):
+        if a < b and not ({v.index for v in bm.faces[a].verts} & {v.index for v in bm.faces[b].verts}):
+            n += 1
+    bm.free()
+    return n
 
 
 def uv_report(obj, grid=1024):

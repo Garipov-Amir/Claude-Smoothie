@@ -613,22 +613,62 @@ def cage_to_bmesh(C, G):
     return bm, eyes, mouth
 
 
+def _boundary_loop(edges):
+    """Order the verts of one closed boundary loop."""
+    adj = {}
+    for e in edges:
+        a, b = e.verts
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
+    start = next(iter(adj))
+    loop, prev, cur = [start], None, start
+    while True:
+        nxt = [v for v in adj[cur] if v is not prev]
+        if not nxt or nxt[0] is start:
+            break
+        prev, cur = cur, nxt[0]
+        loop.append(cur)
+    return loop
+
+
 def add_face_loops(bm, eyes, mouth):
-    """Insets = concentric edge loops. Eyes get two and lose the inner faces
-    (eyeball goes there); the mouth gets one ring around the lips."""
-    hole_edges = []
+    """Insets = concentric edge loops. Eyes get two; their inner faces are
+    replaced by an eye-socket "bag": the lid margin loop is extruded twice
+    into the head behind the eyeball and capped, so the skin mesh stays
+    watertight (no see-through gap between lid and eyeball in an engine
+    with backface culling). The mouth gets one ring around the lips."""
+    depth_l = bm.verts.layers.float.new("eyedepth")
+    side_l = bm.verts.layers.float.new("eyeside")
     for faces in eyes:
-        r1 = bmesh.ops.inset_region(bm, faces=faces, thickness=0.0045, depth=0.0, use_even_offset=True)
-        r2 = bmesh.ops.inset_region(bm, faces=faces, thickness=0.0030, depth=0.0, use_even_offset=True)
+        side = 1.0 if np.mean([f.calc_center_median().x for f in faces]) > 0 else -1.0
+        bmesh.ops.inset_region(bm, faces=faces, thickness=0.0045, depth=0.0, use_even_offset=True)
+        bmesh.ops.inset_region(bm, faces=faces, thickness=0.0030, depth=0.0, use_even_offset=True)
         # "FACES" also removes the inner edge shared by the deleted faces;
-        # FACES_ONLY left it as a wire edge -> loose verts after subdivision,
-        # which makes bone-heat skinning fail to solve
+        # FACES_ONLY left it as a wire edge -> loose verts after subdivision
         bmesh.ops.delete(bm, geom=faces, context="FACES")
+        bnd = [e for e in bm.edges if e.is_boundary]
+        # this eye's hole only (the other eye may already be closed or not)
+        bnd = [e for e in bnd if (e.verts[0].co.x > 0) == (side > 0)]
+        ring = _boundary_loop(bnd)
+        for v in ring:
+            v[side_l] = side
+        for d in (1.0, 2.0):
+            edges = [e for e in bm.edges if e.is_boundary and (e.verts[0].co.x > 0) == (side > 0)]
+            ret = bmesh.ops.extrude_edge_only(bm, edges=edges)
+            for g in ret["geom"]:
+                if isinstance(g, bmesh.types.BMVert):
+                    g[depth_l] = d
+                    g[side_l] = side
+        edges = [e for e in bm.edges if e.is_boundary and (e.verts[0].co.x > 0) == (side > 0)]
+        last = _boundary_loop(edges)
+        n = len(last)
+        if n % 2 == 0 and n >= 4:  # close with a strip of quads, no n-gon
+            h = n // 2
+            for i in range(h - 1):
+                bm.faces.new([last[i], last[i + 1], last[n - 2 - i], last[n - 1 - i]])
+        else:
+            bm.faces.new(last)
     bmesh.ops.inset_region(bm, faces=mouth, thickness=0.0050, depth=0.0, use_even_offset=True)
-    lay = bm.verts.layers.int.get("part")
-    for v in bm.verts:
-        if not v.link_faces:
-            continue
     return bm
 
 
@@ -726,6 +766,8 @@ def project_and_relax(obj, surf, J, iters=6, pinned=None, relax=0.45):
     # the mesh is triangulated)
     fnbrs = [sorted({u.index for f in v.link_faces for u in f.verts} - {v.index}) for v in bm.verts]
     boundary = np.array([v.is_boundary for v in bm.verts])
+    margin, bag, _d, _s = eye_masks(obj)
+    boundary = boundary | margin | bag
     pinned = boundary if pinned is None else (pinned | boundary)
     co = np.array([v.co[:] for v in bm.verts])
     anchors = np.array([closest_on_polyline(co[i], polys.get(labels[i], polys[TRUNK])) for i in range(len(co))])
@@ -795,31 +837,62 @@ def project_and_relax(obj, surf, J, iters=6, pinned=None, relax=0.45):
     return int(spike.sum())
 
 
+def _float_attr(me, name):
+    if name not in me.attributes:
+        return np.zeros(len(me.vertices))
+    a = np.zeros(len(me.vertices), dtype=np.float32)
+    me.attributes[name].data.foreach_get("value", a)
+    return a
+
+
+def eye_masks(obj):
+    """(margin verts, bag verts, side) from the subdivision-interpolated attributes."""
+    me = obj.data
+    depth = _float_attr(me, "eyedepth")
+    side = _float_attr(me, "eyeside")
+    eye = np.abs(side) > 0.99
+    margin = eye & (depth < 0.01)
+    bag = (depth > 0.01)
+    return margin, bag, depth, side
+
+
 def seat_eye_holes(obj):
-    """Snap each eye-hole boundary loop onto the lid margin measured on the
-    sculpt (landmarks.eye_margin): same vertex order, evenly re-spaced
-    around the opening so no two verts collapse onto one point."""
+    """Snap each lid-margin loop onto the lid margin measured on the sculpt
+    (landmarks.eye_margin), evenly re-spaced so no two verts collapse, and
+    lay the socket bag behind the eyeball: each bag ring shrinks toward the
+    eye center and steps back into the head."""
     import landmarks
-    bm = bmesh.new()
-    bm.from_mesh(obj.data)
-    bm.verts.ensure_lookup_table()
+    me = obj.data
+    co = np.empty(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3).astype(np.float64)
+    margin, bag, depth, _s = eye_masks(obj)
     for side in (1, -1):
         c = np.array(LM["eye_l"], dtype=np.float64)
         c[0] *= side
-        margin = LM["eye_margin_l" if side > 0 else "eye_margin_r"]
-        loop = [v for v in bm.verts if v.is_boundary and np.linalg.norm(np.array(v.co) - c) < 0.04]
-        if not loop:
-            continue
-        # angle around the view axis in that eye's frame (+X = world +X)
-        psis = np.array([math.atan2((np.array(v.co) - c)[2], (np.array(v.co) - c)[0]) for v in loop])
-        order = np.argsort(psis)
-        n = len(loop)
-        even = psis[order[0]] + np.arange(n) * 2 * math.pi / n
-        shift = np.angle(np.mean(np.exp(1j * (psis[order] - even))))
-        for k, vi in enumerate(order):
-            loop[vi].co = Vector(landmarks.margin_point(margin, even[k] + shift))
-    bm.to_mesh(obj.data)
-    bm.free()
+        mg = LM["eye_margin_l" if side > 0 else "eye_margin_r"]
+        near = np.linalg.norm(co - c, axis=1) < 0.05
+        idx = np.nonzero(margin & near & (np.sign(co[:, 0]) == side))[0]
+        if len(idx):
+            rel = co[idx] - c
+            psis = np.arctan2(rel[:, 2], rel[:, 0])
+            order = np.argsort(psis)
+            n = len(idx)
+            even = psis[order[0]] + np.arange(n) * 2 * math.pi / n
+            shift = np.angle(np.mean(np.exp(1j * (psis[order] - even))))
+            for k, oi in enumerate(order):
+                co[idx[oi]] = landmarks.margin_point(mg, even[k] + shift)
+        bidx = np.nonzero(bag & near & (np.sign(co[:, 0]) == side))[0]
+        r = float(LM["eye_r_radius"])
+        for i in bidx:
+            rel = co[i] - c
+            psi = math.atan2(rel[2], rel[0])
+            m = landmarks.margin_point(mg, psi)
+            d = float(depth[i])
+            # behind the eye: shrink toward the axis, push back along +Y
+            co[i] = c + (m - c) * max(0.15, 1.0 - 0.30 * d) + np.array([0, 1.0, 0]) * (0.35 * r * d)
+    me.vertices.foreach_set("co", co.astype(np.float32).reshape(-1))
+    me.update()
 
 
 def relabel_from_cage(obj, C):
@@ -840,7 +913,51 @@ def relabel_from_cage(obj, C):
     bm.free()
 
 
-def build_lods(J, hp_obj, name="SK_Character", iters=(6, 4)):
+def pouch_cage(name="SK_Character_Pouch"):
+    """Low-poly for the belt pouch: a subdivided box around its sculpted
+    frame (flap and strap loop are normal-map detail)."""
+    import costume
+    c, R, half = costume.GEAR["pouch_frame"]
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=2.0)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True)
+    M = np.asarray(R, dtype=np.float64)
+    for v in bm.verts:
+        p = np.array(v.co) * (np.asarray(half) * 0.98)
+        v.co = Vector(M @ p + np.asarray(c, dtype=np.float64))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+def project_nearest(obj, surf, iters=3, relax=0.4):
+    """Plain snap + relax (for hard-surface pieces: nearest point is right)."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    nbrs = [[e.other_vert(v).index for e in v.link_edges] for v in bm.verts]
+    co = np.array([v.co[:] for v in bm.verts])
+    co = np.array([surf.nearest(p) for p in co])
+    for _ in range(iters):
+        for v, p in zip(bm.verts, co):
+            v.co = Vector(p)
+        bm.normal_update()
+        nor = np.array([v.normal[:] for v in bm.verts])
+        avg = np.array([co[n].mean(axis=0) for n in nbrs])
+        d = avg - co
+        d -= nor * np.sum(d * nor, axis=1, keepdims=True)
+        co = np.array([surf.nearest(p) for p in co + relax * d])
+    for v, p in zip(bm.verts, co):
+        v.co = Vector(p)
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
+def build_lods(J, hp_obj, name="SK_Character", iters=(6, 4), hp_pouch=None):
     """Cage -> UVs -> subdivision LODs.
 
     Returns (lod4_cage, lod2, lod0): the cage itself is the lowest clean LOD,
@@ -861,7 +978,24 @@ def build_lods(J, hp_obj, name="SK_Character", iters=(6, 4)):
     cage = bpy.data.objects.new(f"{name}_LOD4", me)
     bpy.context.scene.collection.objects.link(cage)
     seat_eye_holes(cage)
-    uvs.unwrap(cage)
+    pouches = []
+    if hp_pouch is not None:
+        pc = pouch_cage(f"{name}_Pouch_LOD4")
+        psurf = Surface(hp_pouch)
+        project_nearest(pc, psurf, iters=1)
+        pouches.append(pc)
+    uvs.unwrap(cage, extras=pouches)
+    if pouches:
+        prev = pouches[0]
+        for level in ("LOD2", "LOD0"):
+            o = prev.copy()
+            o.data = prev.data.copy()
+            o.name = o.data.name = f"{name}_Pouch_{level}"
+            bpy.context.scene.collection.objects.link(o)
+            subdivide(o, 1)
+            project_nearest(o, psurf, iters=3)
+            pouches.append(o)
+            prev = o
 
     lods = [cage]
     prev = cage
