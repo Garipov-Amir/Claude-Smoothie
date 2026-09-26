@@ -86,12 +86,50 @@ def tube_coords(s, th, radius, along=0.035, around=0.10):
     return np.stack([s / along, np.cos(th) * radius / around, np.sin(th) * radius / around], axis=-1).astype(np.float32)
 
 
+def _hand_capsules(J):
+    """(a, b, ra, rb) round cones around the palm (wrist -> each knuckle)
+    and every finger segment of the left hand, sized to this hand."""
+    ch = J["_chains_l"]
+    W = np.asarray(J["hand_l"], np.float32)
+    s = float(np.linalg.norm(ch["middle"][0][0] - W)) / 0.1167     # palm length / the Ranger's
+    caps = []
+    for f, (pts, radii) in ch.items():
+        pts = np.asarray(pts, np.float32)
+        if f != "thumb":
+            caps.append((W, pts[0], 0.018 * s, 1.6 * radii[0] * s))
+        for i in range(len(pts) - 1):
+            caps.append((pts[i], pts[i + 1], 1.6 * radii[i] * s, 1.6 * radii[i + 1] * s))
+    return caps
+
+
+def hand_zone(Q, J, margin=0.006):
+    """1 on the hand and fingers, 0 elsewhere (points mirrored to x >= 0).
+    Spread fingers of a big hand reach 3.6 forearm radii off the arm's
+    axis, so a radius test around the forearm left fingertips to the
+    trousers and belt next to them."""
+    shape = Q.shape[:-1]
+    P = Q.reshape(-1, 3)
+    out = np.zeros(len(P), np.float32)
+    t, _r, _cl, _u = arm_param(P, J)
+    sel = np.nonzero(t > 0.9)[0]
+    if len(sel):
+        X = P[sel]
+        d = np.full(len(sel), np.inf, np.float32)
+        for a, b, ra, rb in _hand_capsules(J):
+            ts, dist, _c = seg_param(X, a, b)
+            ts = np.clip(ts, 0.0, 1.0)
+            dist = np.linalg.norm(X - (a + ts[:, None] * (b - a)), axis=-1)
+            d = np.minimum(d, dist - (ra + (rb - ra) * ts))
+        out[sel] = smoothstep(margin + 0.004, margin, d)
+    return out.reshape(shape)
+
+
 def not_hands(Q, J, k=1.0):
     """0 on the forearms/hands (they hang next to the hips and thighs in the
     A-pose; torso and leg garments must not grow onto them)."""
     t, r, _cl, _u = arm_param(Q, J)
     rf = LM["r_forearm"]
-    return 1.0 - smoothstep(0.30, 0.45, t) * smoothstep(2.2 * rf * k, 1.5 * rf * k, r)
+    return (1.0 - smoothstep(0.30, 0.45, t) * smoothstep(2.2 * rf * k, 1.5 * rf * k, r)) * (1.0 - hand_zone(Q, J))
 
 
 def box(lo, hi):
@@ -614,7 +652,12 @@ def beard_mask(P):
     # cheek line instead of a hard ledge (a ledge reads as a chin strap)
     band = smoothstep(zbot - 0.006 * sh, zbot + 0.010 * sh, z) * (1.0 - smoothstep(ztop - 0.016 * sh, ztop + 0.002 * sh, z)) ** 1.5
     front = smoothstep(1.75, 1.55, phi)
-    lips = np.exp(-(((P[..., 0]) / (0.028 * sh)) ** 2 + ((z - float(ST[2])) / (0.007 * sh)) ** 2))
+    # the lips stay bare, both vermilions including the underside of the
+    # lower lip (rays from under a bearded lower lip ran down through the
+    # filled fold below it and crumpled the mouth)
+    zl0, zl1 = float(LM["lower_lip"][2]) - 0.007 * sh, float(LM["upper_lip"][2]) + 0.004 * sh
+    dz = np.maximum(np.maximum(zl0 - z, z - zl1), 0.0)
+    lips = np.exp(-((P[..., 0] / (0.030 * sh)) ** 2 + (dz / (0.004 * sh)) ** 2))
     near = np.linalg.norm(d, axis=-1) < 0.15 * sh
     return band * front * (1.0 - smoothstep(0.35, 0.6, lips)) * near * (1.0 - ear_mask(P))
 
