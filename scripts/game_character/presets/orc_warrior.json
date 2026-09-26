@@ -1,0 +1,22 @@
+{
+  "name": "Orc warrior",
+  "body": {"sex": 1.0, "age": 30, "muscle": 1.0, "weight": 0.62, "height_m": 1.96,
+           "ethnicity": {"african": 0.5, "asian": 0.0, "caucasian": 0.5},
+           "modifiers": {"ear-shape-pointed": 1.0, "ear-scale-incr": 0.6, "chin-prominent-incr": 0.7, "chin-width-incr": 0.8,
+                         "forehead-nubian-incr": 0.8, "nose-scale-horiz-incr": 0.8, "nose-point-width-incr": 0.6,
+                         "mouth-scale-horiz-incr": 0.5, "torso-vshape-incr": 0.6, "neck-scale-horiz-incr": 0.6}},
+  "skin": {"color": "#6f8a4e", "lips": "#4f5e3a", "freckles": 0.0, "stubble": 0.2},
+  "eyes": {"iris": "#b0781f"},
+  "hair": {"style": "mohawk", "hairline": "straight", "color": "#1a1512"},
+  "beard": {"style": "none"},
+  "outfit": [
+    {"type": "trousers", "length": "full", "material": "leather", "color": "#3d2a1b"},
+    {"type": "belt", "material": "leather", "color": "#241710", "buckle": "iron", "width": 0.06},
+    {"type": "bracers", "material": "metal", "color": "#5d5f61"},
+    {"type": "boots", "height": "knee", "material": "fur", "color": "#4e3b29"}
+  ],
+  "pieces": [
+    {"type": "tusks", "size": 1.2},
+    {"type": "pauldrons", "side": "left", "material": "metal", "metal": "iron", "color": "#5d5f61"}
+  ]
+}

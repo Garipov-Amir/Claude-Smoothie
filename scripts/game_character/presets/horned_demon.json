@@ -1,0 +1,19 @@
+{
+  "name": "Horned demon",
+  "body": {"sex": 0.85, "age": 35, "muscle": 0.8, "weight": 0.45, "height_m": 1.88,
+           "modifiers": {"ear-shape-pointed": 1.0, "ear-scale-incr": 0.3, "head-angle-out": 0.0, "chin-prominent-incr": 0.4,
+                         "eyebrows-angle-up": 0.8}},
+  "skin": {"color": "#8e3b36", "lips": "#4a1f1f", "freckles": 0.0, "stubble": 0.0},
+  "eyes": {"iris": "#e8c21a"},
+  "hair": {"style": "short", "hairline": "straight", "color": "#161213"},
+  "beard": {"style": "short", "color": "#161213"},
+  "outfit": [
+    {"type": "trousers", "length": "full", "material": "cloth", "color": "#221c24"},
+    {"type": "shirt", "sleeves": "long", "neck": "scoop", "tuck": "out", "material": "cloth", "color": "#3a2138"},
+    {"type": "belt", "material": "leather", "color": "#1a1214", "buckle": "gold"},
+    {"type": "shoes", "material": "leather", "color": "#1d1618"}
+  ],
+  "pieces": [
+    {"type": "horns", "shape": "ram", "size": 1.0, "color": "#2b2622"}
+  ]
+}

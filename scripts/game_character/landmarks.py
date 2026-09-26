@@ -144,7 +144,23 @@ def from_reference(ref, J):
         d = np.linalg.norm(P - (A + np.clip(t, 0, 1)[:, None] * ab), axis=1)
         sel = (t > 0.35) & (t < 0.65) & (d < 0.25 * np.linalg.norm(ab) + 0.06) & (P[:, 0] > 0.02)
         L[nm] = float(np.median(d[sel])) if sel.sum() > 20 else 0.05
+    # leg profile: widest skin distance from the leg axis by height (boot shafts)
+    H, K, A = (np.asarray(J[n], float) for n in ("thigh_l", "calf_l", "foot_l"))
+    zs = np.linspace(A[2], H[2], 28)
+    rmax = []
+    for z in zs:
+        c = np.array([np.interp(z, [A[2], K[2], H[2]], [A[i], K[i], H[i]]) for i in (0, 1)])
+        sl = P[(np.abs(P[:, 2] - z) < 0.006) & (P[:, 0] > 0.02)]
+        d = np.linalg.norm(sl[:, :2] - c, axis=1) if len(sl) else np.zeros(1)
+        rmax.append(float(np.max(d[d < 0.16])) if (d < 0.16).any() else 0.05)
+    L["leg_profile"] = (zs, np.array(rmax))
     return L
+
+
+def leg_radius(L, z):
+    """Widest skin distance from the leg axis at height z (from the profile)."""
+    zs, r = L["leg_profile"]
+    return float(np.interp(z, zs, r))
 
 
 def procedural_defaults(J):
