@@ -220,8 +220,15 @@ def shirt_mask(P, J, g):
     t, r, _cl, _u = arm_param(Q, J)
     ra = LM["r_upperarm"]
     near_arm = smoothstep(2.3 * ra, 1.7 * ra, r) * smoothstep(-0.15, 0.0, t)
-    cuff_t = {"long": 0.952, "short": 0.30, "none": -0.02}[g["sleeves"]]
-    m_cuff = 1.0 - near_arm * smoothstep(cuff_t - 0.003, cuff_t + 0.003, t)
+    if g["sleeves"] == "none":
+        # a tank-top armhole cut like the vest's (4 mm further in, so under a
+        # vest the shirt's edge hides under the vest's instead of showing a
+        # sliver of shirt between them)
+        tl = t * arm_length(J)
+        m_cuff = 1.0 - smoothstep(2.19 * ra, 1.67 * ra, r) * smoothstep(-0.072 * sb, -0.068 * sb, tl)
+    else:
+        cuff_t = {"long": 0.952, "short": 0.30}[g["sleeves"]]
+        m_cuff = 1.0 - near_arm * smoothstep(cuff_t - 0.003, cuff_t + 0.003, t)
     hem = LM["belt_z"] - 0.07 * sb if g["tuck"] == "in" else float(J["pelvis"][2]) - 0.06 * sb
     m_bot = smoothstep(hem, hem + 0.005, z)
     m_neck = _neck_masks(Q, g["neck"], sb, v_depth=0.07)
