@@ -16,6 +16,8 @@ Axes: Z up, character faces -Y, character's left is +X. Meters.
 """
 
 import math
+import os
+
 import numpy as np
 
 from sdf import (SDFModel, Ellipsoid, RoundCone, Capsule, RoundBox, Torus, Custom,
@@ -393,6 +395,8 @@ THUMB = ((0.040, 0.030, 0.026), 0.0125)
 def hand_chains(J):
     """Joint chains of the left hand: name -> (points[4], radii[4]).
     points[0] is the knuckle (MCP) / thumb CMC, points[3] the tip."""
+    if "_chains_l" in J:
+        return J["_chains_l"]
     W = J["hand_l"]
     ax, th, pn = J["_hand_axis_l"], J["_thumb_dir_l"], J["_palm_n_l"]
     chains = {}
@@ -455,13 +459,46 @@ def build_foot(m: SDFModel, J):
 # Build + regions
 # ---------------------------------------------------------------------------
 
-BOUNDS = ((-0.82, -0.30, -0.01), (0.82, 0.22, 1.83))
+BOUNDS = ((-0.82, -0.46, -0.03), (0.82, 0.22, 1.84))
+
+REF_CACHE = os.environ.get("GC_REF_CACHE", os.path.expanduser("~/.cache/game_character_ref"))
 
 
-def build(arm_angle=45.0, clothing=True, hair=True):
-    J = skeleton(arm_angle)
+def build(arm_angle=45.0, clothing=True, hair=True, body="reference"):
+    """body="reference": anatomy from the CC0 MakeHuman reference body (see
+    reference_body.py) + this pipeline's eyes, clothing, gear and hair.
+    body="procedural": the original primitive-sculpted body."""
+    from landmarks import LM
+    import landmarks
+    LM.clear()
     m = SDFModel()
-    build_body(m, J)
+    if body == "reference":
+        import reference_body as RB
+        ref = RB.build(REF_CACHE, full=True)
+        pts, nrm = RB.surface_samples(ref, REF_CACHE)
+        J = landmarks.skeleton_from_reference(ref)
+        m.add(RB.MeshSDF(pts, nrm))
+        LM.update(landmarks.from_reference(ref, J))
+        # eyeballs sit in the reference's eye pockets; record where the lids
+        # cover them (the lid margin) before they join the surface
+        r = LM["eye_r_radius"]
+        body_only = SDFModel()
+        body_only.ops = list(m.ops)
+        LM["eye_margin_l"] = landmarks.eye_margin(body_only, LM["eye_l"], r)
+        LM["eye_margin_r"] = landmarks.eye_margin(body_only, landmarks.mirror_x(LM["eye_l"]), r)
+        for c in (LM["eye_l"], landmarks.mirror_x(LM["eye_l"])):
+            m.add(Ellipsoid(tuple(c), (r, r, r)), k=0.0)
+        # perineum height: first surface point going up the midline
+        from sdf import sample
+        zz = np.arange(0.5, 1.0, 0.001, dtype=np.float32)
+        col = np.stack([np.zeros_like(zz), np.full_like(zz, float(J["pelvis"][1])), zz], 1)
+        inside = np.nonzero(sample(body_only, col) < 0)[0]
+        LM["crotch_z"] = float(zz[inside[0]]) if len(inside) else 0.84
+    else:
+        J = skeleton(arm_angle)
+        build_body(m, J)
+        LM.update(landmarks.procedural_defaults(J))
+    LM["J"] = J
     if clothing:
         import costume
         costume.dress(m, J, hair_on=hair)

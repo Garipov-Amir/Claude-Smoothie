@@ -36,10 +36,16 @@ def triangulate(obj):
 def protect_group(obj, name="LOD_protect"):
     """Weights that slow decimation down: head/face and hands."""
     g = obj.vertex_groups.get(name) or obj.vertex_groups.new(name=name)
+    from landmarks import LM
     co = U.verts_np(obj)
+    J = LM["J"]
     w = np.zeros(len(co))
-    w = np.maximum(w, np.clip((co[:, 2] - 1.53) / 0.05, 0, 1))                        # head
-    w = np.maximum(w, np.clip((np.abs(co[:, 0]) - 0.55) / 0.05, 0, 1) * (co[:, 2] > 0.8))  # hands
+    w = np.maximum(w, np.clip((co[:, 2] - (LM["chin_z"] - 0.04)) / 0.05, 0, 1))        # head
+    for side in (1, -1):
+        h = np.array(J["hand_l"], dtype=np.float64)
+        h[0] *= side
+        d = np.linalg.norm(co - (h + np.array(J["_hand_axis_l"]) * np.array([side, 1, 1]) * 0.06), axis=1)
+        w = np.maximum(w, np.clip((0.13 - d) / 0.04, 0, 1))                               # hands
     for i, wi in enumerate(w):
         if wi > 0:
             g.add([i], float(wi), "REPLACE")

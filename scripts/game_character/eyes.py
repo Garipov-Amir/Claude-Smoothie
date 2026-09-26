@@ -10,14 +10,16 @@ import math
 
 import numpy as np
 
-EYE_C = np.array([0.0315, -0.0800, 1.6840])
-EYE_R = 0.0118
+def _eye():
+    from landmarks import LM
+    return np.array(LM["eye_l"], dtype=np.float64), float(LM["eye_r_radius"]) - 0.0003
 
 
 def make_eye(side, name, segments=24, rings=16):
     import bmesh
     import bpy
     from mathutils import Vector
+    EYE_C, EYE_R = _eye()
     bm = bmesh.new()
     bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=rings, radius=EYE_R)
     uv = bm.loops.layers.uv.new("UVMap")

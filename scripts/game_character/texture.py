@@ -215,6 +215,15 @@ def author(maps, J, log=print):
     S = region(C.SKIN)
     if S is not None:
         P, z, n, cavity, edge, ao, n_mid, n_lo, n_hi = S.P, S.z, S.n, S.cavity, S.edge, S.ao, S.n_mid, S.n_lo, S.n_hi
+        from landmarks import LM
+        E = np.asarray(LM["eye_l"], np.float32)
+        NT = np.asarray(LM["nose_tip"], np.float32)
+        ST = np.asarray(LM["stomion"], np.float32)
+        EAR = np.asarray(LM["ear_l"], np.float32)
+        HC = np.asarray(LM["head_c"], np.float32)
+        cz = float(LM["chin_z"])
+        ex, ey, ez = float(E[0]), float(E[1]), float(E[2])
+        sy, sz = float(ST[1]), float(ST[2])
         base = srgb(0.70, 0.53, 0.43)   # sun-tanned, neutral-olive (not pink)
         a = np.repeat(base[None], n, 0)
         red = srgb(0.70, 0.43, 0.37)
@@ -222,14 +231,15 @@ def author(maps, J, log=print):
         blu = srgb(0.50, 0.46, 0.44)
         # the classic face color zones: yellowish forehead, red middle
         # third (nose, cheeks, ears), blue-grey lower third (beard shadow)
-        z_fore = smoothstep(1.70, 1.74, z) * blob(P, (0, -0.06, 1.74), 0.08)
-        z_red = np.maximum.reduce([blob_sym(P, (0.045, -0.078, 1.645), 0.030),
-                                   blob(P, (0, -0.110, 1.646), 0.020),
-                                   blob_sym(P, (0.078, 0.010, 1.668), 0.034)])
-        beard = (smoothstep(1.63, 1.60, z) * smoothstep(1.53, 1.57, z)
-                 * smoothstep(0.02, -0.03, P[:, 1]) * (1 - blob(P, (0, -0.10, 1.607), 0.016)))
-        beard = np.maximum(beard, blob(P, (0, -0.105, 1.622), 0.014) * 0.9)  # moustache area
-        beard = np.maximum(beard, smoothstep(1.66, 1.63, z) * blob_sym(P, (0.062, -0.030, 1.635), 0.03))  # sideburn->jaw
+        z_fore = smoothstep(ez + 0.016, ez + 0.056, z) * blob(P, (0, ey + 0.020, ez + 0.056), 0.08)
+        z_red = np.maximum.reduce([blob_sym(P, (ex + 0.0135, ey + 0.002, ez - 0.039), 0.030),
+                                   blob(P, tuple(NT), 0.020),
+                                   blob_sym(P, tuple(EAR), 0.034)])
+        beard = (smoothstep(sz + 0.021, sz - 0.009, z) * smoothstep(cz - 0.036, cz + 0.004, z)
+                 * smoothstep(HC[1] + 0.01, HC[1] - 0.04, P[:, 1]) * (1 - blob(P, (0, sy + 0.008, sz - 0.002), 0.016)))
+        beard = np.maximum(beard, blob(P, (0, sy + 0.0035, sz + 0.013), 0.014) * 0.9)  # moustache area
+        jaw = (float(EAR[0]) - 0.021, float(EAR[1]) - 0.040, ez - 0.049)
+        beard = np.maximum(beard, smoothstep(ez - 0.024, ez - 0.054, z) * blob_sym(P, jaw, 0.03))  # sideburn->jaw
         a = lerp(a, yel, (z_fore * 0.30)[:, None])
         a = lerp(a, red, (z_red * 0.32)[:, None])
         a = lerp(a, blu, (beard * 0.30)[:, None])
@@ -239,26 +249,26 @@ def author(maps, J, log=print):
         stub = beard * (0.55 + 0.45 * grain) * (0.8 + 0.4 * n_mid)
         a = lerp(a, srgb(0.27, 0.22, 0.19), (stub * 0.42)[:, None])
         # lips
-        lips = blob(P, (0, -0.101, 1.6085), 0.014) * smoothstep(0.004, 0.0, np.abs(P[:, 2] - 1.6085) - 0.0045)
+        lips = blob(P, (0, sy + 0.0075, sz), 0.014) * smoothstep(0.004, 0.0, np.abs(P[:, 2] - sz) - 0.0045)
         a = lerp(a, srgb(0.62, 0.36, 0.34), (lips * 0.8)[:, None])
         # eyebrows: a tapered band along the brow ridge (thick at the head,
         # thin at the tail), hair streaks angled up-and-out, soft edges
         Pe = P.copy()
         Pe[:, 0] = np.abs(Pe[:, 0])
-        tb = np.clip((Pe[:, 0] - 0.011) / 0.047, 0.0, 1.0)            # 0 inner -> 1 tail
-        brow_c = 1.7055 + 0.0055 * np.sin(np.minimum(tb * 1.25, 1.0) * math.pi * 0.85) - 0.006 * smoothstep(0.75, 1.0, tb)
+        tb = np.clip((Pe[:, 0] - (ex - 0.0205)) / 0.047, 0.0, 1.0)            # 0 inner -> 1 tail
+        brow_c = ez + 0.0215 + 0.0055 * np.sin(np.minimum(tb * 1.25, 1.0) * math.pi * 0.85) - 0.006 * smoothstep(0.75, 1.0, tb)
         half = 0.0042 * (1.0 - 0.55 * tb)
         dz = np.abs(z - brow_c)
-        brow = (smoothstep(half + 0.0012, half - 0.0008, dz) * smoothstep(0.009, 0.013, Pe[:, 0])
-                * smoothstep(0.060, 0.054, Pe[:, 0]) * smoothstep(-0.066, -0.076, Pe[:, 1]))
+        brow = (smoothstep(half + 0.0012, half - 0.0008, dz) * smoothstep(ex - 0.0225, ex - 0.0185, Pe[:, 0])
+                * smoothstep(ex + 0.0285, ex + 0.0225, Pe[:, 0]) * smoothstep(ey + 0.014, ey + 0.004, Pe[:, 1]))
         # streak coordinate: rotate (x,z) by ~25 deg so strands point up-and-out
         ca, sa = math.cos(0.45), math.sin(0.45)
         q = np.stack([Pe[:, 0] * ca + P[:, 2] * sa, -Pe[:, 0] * sa + P[:, 2] * ca, P[:, 1]], axis=1).astype(np.float32)
         strokes = fbm(q * np.array([0.25, 1.0, 1.0], np.float32), 1400.0, 2, seed=7) * 0.5 + 0.5
         brow_m = brow * (0.55 + 0.45 * smoothstep(0.35, 0.7, strokes))
         a = lerp(a, srgb(0.11, 0.08, 0.06), (brow_m * 0.92)[:, None])
-        # eye area a touch darker / cooler, knuckles redder
-        eyes = blob_sym(P, (0.032, -0.085, 1.684), 0.022)
+        # eye area a touch darker / cooler
+        eyes = blob_sym(P, (ex, ey - 0.005, ez), 0.022)
         a = lerp(a, srgb(0.58, 0.44, 0.42), (eyes * 0.25)[:, None])
         # blotchy variation, freckles and a few moles
         a = a * (0.94 + 0.10 * n_mid[:, None])
@@ -266,7 +276,7 @@ def author(maps, J, log=print):
         a = lerp(a, srgb(0.55, 0.37, 0.27), (fr * 0.25)[:, None])
         a = a * (1.0 - 0.18 * cavity)[:, None]
         pores = cells(P, 700.0, seed=11)
-        ro = 0.50 - 0.12 * np.maximum(z_fore, blob(P, (0, -0.106, 1.665), 0.03)) - 0.10 * lips + 0.08 * beard
+        ro = 0.50 - 0.12 * np.maximum(z_fore, blob(P, (0, float(NT[1]) + 0.011, float(NT[2]) + 0.019), 0.03)) - 0.10 * lips + 0.08 * beard
         ro = ro + 0.06 * (1 - pores)
         h = -0.00004 * smoothstep(0.55, 0.8, 1 - pores) + 0.00002 * n_hi + 0.00006 * brow_m * strokes
         h = h - 0.00006 * lips * smoothstep(0.6, 0.9, value_noise(P * np.array([1, 1, 6], np.float32), 900.0, 17) * 0.5 + 0.5)
@@ -278,7 +288,9 @@ def author(maps, J, log=print):
         P, z, n, n_mid = S.P, S.z, S.n, S.n_mid
         strand = fbm(P * np.array([1.0, 0.18, 1.0], np.float32), 600.0, 3, seed=21) * 0.5 + 0.5
         strand_s = fbm(P * np.array([1.0, 1.0, 0.2], np.float32), 600.0, 3, seed=22) * 0.5 + 0.5
-        top = smoothstep(1.70, 1.78, z)
+        from landmarks import LM as _LM
+        _ez = float(_LM["eye_l"][2])
+        top = smoothstep(_ez + 0.016, _ez + 0.096, z)
         st = top * strand + (1 - top) * strand_s
         a = lerp(srgb(0.075, 0.055, 0.045), srgb(0.22, 0.15, 0.10), (st * 0.8 + 0.2 * n_mid)[:, None])
         # feathered hairline: scalp shows through
@@ -306,8 +318,10 @@ def author(maps, J, log=print):
         base = srgb(0.70, 0.64, 0.53)
         a = base * (0.90 + 0.10 * weave + 0.08 * (slub - 0.5))[:, None]
         # sweat/dirt: armpits, collar, cuffs; wear at elbows
-        pits = blob_sym(P, (0.15, 0.0, 1.36), 0.07)
-        collar = smoothstep(1.44, 1.50, z)
+        Sj = J["upperarm_l"]
+        pits = blob_sym(P, (float(Sj[0]) - 0.04, float(Sj[1]) + 0.01, float(Sj[2]) - 0.08), 0.07)
+        from landmarks import LM as _LM
+        collar = smoothstep(_LM["neck_base_z"] - 0.035, _LM["neck_base_z"] + 0.025, z)
         cuffs = blob_sym(P, tuple(J["hand_l"] - J["_hand_axis_l"] * 0.02), 0.05)
         stain = np.clip(pits * 0.5 + collar * 0.35 + cuffs * 0.4, 0, 1) * (0.5 + 0.5 * n_mid)
         a = lerp(a, srgb(0.55, 0.47, 0.33), stain[:, None] * 0.6)
@@ -377,7 +391,8 @@ def author(maps, J, log=print):
         twill = 0.5 + 0.5 * np.sin(2 * math.pi * (gu + gv) * 0.7)
         base = srgb(0.25, 0.25, 0.20)
         a = base * (0.88 + 0.14 * twill[:, None] + 0.10 * (n_mid[:, None] - 0.5))
-        knees = np.maximum(blob_sym(P, (0.10, -0.06, 0.50), 0.07), 0)
+        Kj = J["calf_l"]
+        knees = np.maximum(blob_sym(P, (float(Kj[0]), float(Kj[1]) - 0.05, float(Kj[2])), 0.07), 0)
         a = lerp(a, a * 1.35, (knees * 0.5 * (0.5 + n_hi))[:, None])
         mud = np.clip(grime * 0.8 * (0.4 + n_lo) + knees * 0.25 * n_lo, 0, 1)
         a = lerp(a, srgb(0.33, 0.28, 0.21), mud[:, None] * 0.7)

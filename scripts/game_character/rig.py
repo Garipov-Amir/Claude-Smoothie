@@ -50,7 +50,7 @@ def bone_table(J):
     T["spine_02"] = (J["spine_02"], J["spine_03"], "spine_01", back, True)
     T["spine_03"] = (J["spine_03"], J["neck_01"], "spine_02", back, True)
     T["neck_01"] = (J["neck_01"], J["head"], "spine_03", back, True)
-    T["head"] = (J["head"], np.array([0, 0.01, 1.76]), "neck_01", back, True)
+    T["head"] = (J["head"], np.array([0, J["head"][1], J["head_top"][2] - 0.04]), "neck_01", back, True)
     chains = humanoid.hand_chains(J)
     for side, sfx in ((1, "_l"), (-1, "_r")):
         m = lambda n: mirror(J[n], side)
@@ -78,7 +78,8 @@ def bone_table(J):
         T["ball" + sfx] = (B, Tt, "foot" + sfx, (0, 0, 1), True)
         T["thigh_twist_01" + sfx] = (H + (K - H) * 0.5, H + (K - H) * 0.75, "thigh" + sfx, back, True)
         T["calf_twist_01" + sfx] = (K + (A - K) * 0.5, K + (A - K) * 0.75, "calf" + sfx, back, True)
-        eye = mirror((0.0315, -0.0800, 1.6840), side)
+        from landmarks import LM
+        eye = mirror(LM["eye_l"], side)
         T["eye" + sfx] = (eye, eye + np.array([0, -0.02, 0]), "head", (0, 0, 1), True)
     return T
 

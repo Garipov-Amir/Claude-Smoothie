@@ -36,6 +36,7 @@ from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 
 import humanoid
+from landmarks import LM
 
 # part labels (stored per vertex; decide which bone axis a vertex projects from)
 TRUNK, ARM, HAND, LEG, FINGER = 0, 10, 20, 30, 40
@@ -165,10 +166,30 @@ def az16(half):
     return [math.radians(a) for a in half] + [math.radians(-a) for a in half[-2:0:-1]]
 
 
-# trunk rows: (z, blend torso->head azimuths)
-TRUNK_ROWS = [0.845, 0.885, 0.920, 0.955, 0.986, 1.024, 1.065, 1.120, 1.185, 1.250,
-              1.310, 1.362, 1.418, 1.472, 1.505, 1.540, 1.566, 1.589, 1.609, 1.631,
-              1.648, 1.672, 1.698, 1.722, 1.748, 1.772]
+# trunk rows are placed on landmarks (see trunk_rows()); indices below refer
+# to that list: crotch .. armpit (0-10), arm hole (11-13), neck (14-16),
+# face (17-22), skull (23-25)
+TORSO_FRACS = [0.0, 0.078, 0.148, 0.218, 0.280, 0.357, 0.439, 0.550, 0.680, 0.811, 0.931]
+
+
+def trunk_rows():
+    J = LM["J"]
+    crotch = LM.get("crotch_z", 0.845)
+    S_z = float(J["upperarm_l"][2])
+    armpit = S_z - 0.084
+    rows = [crotch + (armpit - crotch) * f for f in TORSO_FRACS]
+    rows += [armpit, S_z - 0.028, S_z + 0.026]
+    nb, cz = LM["neck_base_z"], LM["chin_z"]
+    st = float(LM["stomion"][2])
+    nose = float(LM["nose_tip"][2])
+    ez = float(LM["eye_l"][2])
+    r14 = max(nb + 0.03, S_z + 0.05)
+    r16 = cz + 0.002
+    rows += [r14, 0.5 * (r14 + r16), r16]
+    rows += [0.5 * (cz + st) + 0.002, st, nose - 0.012]
+    rows += [0.5 * (nose - 0.012 + ez - 0.012), ez - 0.012, ez + 0.014]
+    rows += [ez + 0.038, ez + 0.064, ez + 0.088]
+    return rows
 ARM_HOLE_ROWS = (11, 12, 13)      # 1.362 / 1.418 / 1.472
 ARM_HOLE_COLS = (3, 4, 5, 6)      # 62..118 deg
 EYE_ROWS = (21, 22)               # 1.672 -> 1.698
@@ -177,15 +198,41 @@ MOUTH_ROWS = (17, 18, 19)         # 1.589 -> 1.609 (lip line) -> 1.631
 MOUTH_COLS = (14, 15, 0, 1, 2)    # -19 .. 19 deg
 
 
-def trunk_center(z):
-    """Spine/head axis used as the ray origin for trunk rings."""
-    zs = [0.80, 0.965, 1.045, 1.165, 1.30, 1.485, 1.56, 1.62, 1.70, 1.80]
-    ys = [0.010, 0.010, 0.014, 0.020, 0.014, 0.022, 0.018, 0.012, 0.012, 0.012]
-    return np.array([0.0, np.interp(z, zs, ys), z])
+_CENTERS = {}
+
+
+def trunk_center(z, surf=None):
+    """Ray origin for a trunk ring: the centroid of the body's cross-section
+    at that height (found by casting rays from a first guess on the spine
+    axis — joint helpers sit near the back, not in the middle of the section)."""
+    key = round(float(z), 5)
+    if key in _CENTERS:
+        return _CENTERS[key].copy()
+    J = LM["J"]
+    pts = [J["pelvis"], J["spine_01"], J["spine_02"], J["spine_03"], J["neck_01"], J["head"],
+           np.asarray(LM["head_c"])]
+    zs = np.array([p[2] for p in pts])
+    ys = np.array([p[1] for p in pts])
+    o = np.array([0.0, float(np.interp(z, zs, ys)), z])
+    if surf is None:
+        return o
+    for _ in range(2):
+        hits = []
+        for k in range(24):
+            a = 2 * math.pi * k / 24
+            h = surf.ray(o, (math.sin(a), -math.cos(a), 0.0), 0.35)
+            if h is not None:
+                hits.append(h)
+        if len(hits) >= 12:
+            c = np.mean(hits, axis=0)
+            o = np.array([0.0, c[1], z])
+    _CENTERS[key] = o
+    return o.copy()
 
 
 def trunk_blend(z):
-    return float(np.clip((z - 1.505) / (1.566 - 1.505), 0.0, 1.0))
+    rows = trunk_rows()
+    return float(np.clip((z - rows[14]) / (rows[16] - rows[14]), 0.0, 1.0))
 
 
 def trunk_dir(z, az):
@@ -199,6 +246,8 @@ def trunk_dir(z, az):
 
 def build_cage(J, surf):
     C = Cage()
+    TRUNK_ROWS = trunk_rows()
+    _CENTERS.clear()
     nrow, ncol = len(TRUNK_ROWS), 16
     G = [[None] * ncol for _ in range(nrow)]
     hole_interior = {(12, 4), (12, 5)}
@@ -208,7 +257,7 @@ def build_cage(J, surf):
     for r, z in enumerate(TRUNK_ROWS):
         b = trunk_blend(z)
         tor, hd = az16(TORSO_AZ), az16(HEAD_AZ)
-        ctr = trunk_center(z)
+        ctr = trunk_center(z, surf)
         for c in range(ncol):
             if (r, min(c, 16 - c) if c else 0) in hole_interior | hole_boundary and c != 0 and c != 8:
                 continue  # left (c) and right (16-c) hole slots come from the arm rings
@@ -243,7 +292,7 @@ def build_cage(J, surf):
     # crown cap (4x4 grid) from the last ring; ring walk must start at a grid corner
     top = G[nrow - 1]
     walk = top[14:] + top[:14]  # start 2 slots right of front so corners fall at +-45 deg
-    cap = C.grid_cap(walk, 4, 4, surf, trunk_center(1.70), TRUNK)
+    cap = C.grid_cap(walk, 4, 4, surf, trunk_center(float(LM["eye_l"][2]) + 0.02, surf), TRUNK)
 
     # ---- UV seams on the trunk ----
     # head/neck island: cut around the neck base and up the back of the head
@@ -352,7 +401,10 @@ def build_hand(C, J, surf, side, wrist):
     pn = mirror_vec(J["_palm_n_l"], side)
     chains = humanoid.hand_chains(J)
     hl = lab(HAND, side)
-    widths = [0.034, 0.017, 0.0, -0.017, -0.033]
+    b_i = mirror(chains["index"][0][0], side)
+    b_p = mirror(chains["pinky"][0][0], side)
+    half = 0.5 * abs(float(np.dot(b_i - b_p, th))) + chains["index"][1][0]
+    widths = [half, half * 0.5, 0.0, -half * 0.5, -half * 0.97]
 
     def palm_ring(t, wscale, h):
         ctr = W + ax * t
@@ -369,7 +421,8 @@ def build_hand(C, J, surf, side, wrist):
             out.append(hit if hit is not None else q)
         return out
 
-    mid = C.ring(palm_ring(0.048, 1.0, 0.012), hl)
+    palm_len = float(np.dot(mirror(chains["middle"][0][0], side) - W, ax))
+    mid = C.ring(palm_ring(palm_len * 0.5, 1.0, 0.012), hl)
     # knuckle ring from the finger bases: separators between neighbors,
     # outer edges one finger-radius past index / pinky
     bases = [mirror(chains[nm][0][0], side) for nm in FINGER_NAMES[:4]]
@@ -458,8 +511,15 @@ def build_leg(C, J, surf, side, first):
         v = v - axis0 * np.dot(v, axis0)
         angs.append(math.atan2(np.dot(v, ref_back), np.dot(v, ref_up)))
     # rows down the leg (z) then the foot path
-    zrows = [0.800, 0.740, 0.670, 0.600, 0.548, 0.512, 0.478, 0.430, 0.380, 0.346, 0.326,
-             0.270, 0.205, 0.145, 0.105]
+    # thigh rows between the crotch and the knee, 2 loops bracketing the knee,
+    # shin, the boot top loop pair (hem of the boots), ankle
+    crotch = LM.get("crotch_z", 0.845)
+    kz, az = float(K[2]), float(A[2])
+    top, kt = crotch - 0.045, kz + 0.043
+    zrows = [top + (kt - top) * f for f in (0.0, 0.203, 0.439, 0.676, 0.851)]
+    zrows += [kz + 0.007, kz - 0.027]
+    zrows += [kz - 0.075, kz - 0.125, 0.346, 0.326]
+    zrows += [0.326 + (az + 0.031 - 0.326) * f for f in (0.254, 0.550, 0.823, 1.0)]
     prev = first
     frame_up, frame_back = ref_up, ref_back
     inner_slot = 9 if side > 0 else 1   # the crotch vertex's slot = inner line of the leg
@@ -588,8 +648,9 @@ def subdivide(obj, levels=1):
 def axis_polylines(J):
     """Per-label bone polylines used as projection anchors."""
     P = {}
-    P[TRUNK] = [np.array([0, 0.010, 0.95]), trunk_center(1.10), trunk_center(1.30), trunk_center(1.485),
-                trunk_center(1.60), trunk_center(1.70), trunk_center(1.74)]
+    ez = float(LM["eye_l"][2])
+    zs = [1.10, 1.30, LM["neck_base_z"] + 0.01, LM["chin_z"] + 0.03, ez + 0.01, ez + 0.05]
+    P[TRUNK] = [np.array([0, trunk_center(0.95)[1], 0.95])] + [trunk_center(z) for z in zs]
     chains = humanoid.hand_chains(J)
     for side in (1, -1):
         S, E, W = (mirror(J[n], side) for n in ("upperarm_l", "lowerarm_l", "hand_l"))
@@ -734,46 +795,29 @@ def project_and_relax(obj, surf, J, iters=6, pinned=None, relax=0.45):
     return int(spike.sum())
 
 
-def eye_margin_positions(side, n_pts_angles):
-    """Lid-margin points (matching humanoid.eyelids) for given angles."""
-    c = np.array([0.0315 * side, -0.0800, 1.6840])
-    R = 0.0120 + 0.0009
-    half_w, up_h, lo_h, tilt = 0.0156, 0.0063, 0.0046, math.radians(6.0)
-    out = []
-    for psi in n_pts_angles:
-        xr = half_w * math.cos(psi)
-        hh = up_h if math.sin(psi) > 0 else lo_h
-        hh *= (1.0 - 0.10 * np.clip(xr / half_w, -1, 1))
-        zr = hh * math.sin(psi)
-        x = xr * math.cos(tilt) - zr * math.sin(tilt)
-        z = xr * math.sin(tilt) + zr * math.cos(tilt)
-        y = -math.sqrt(max(R * R - x * x - z * z, 1e-8))
-        out.append(c + np.array([x * side, y, z]))
-    return out
-
-
 def seat_eye_holes(obj):
-    """Snap each eye-hole boundary loop onto the lid margin."""
+    """Snap each eye-hole boundary loop onto the lid margin measured on the
+    sculpt (landmarks.eye_margin): same vertex order, evenly re-spaced
+    around the opening so no two verts collapse onto one point."""
+    import landmarks
     bm = bmesh.new()
     bm.from_mesh(obj.data)
     bm.verts.ensure_lookup_table()
     for side in (1, -1):
-        c = np.array([0.0315 * side, -0.0800, 1.6840])
-        loop = [v for v in bm.verts if v.is_boundary and np.linalg.norm(np.array(v.co) - c) < 0.03]
+        c = np.array(LM["eye_l"], dtype=np.float64)
+        c[0] *= side
+        margin = LM["eye_margin_l" if side > 0 else "eye_margin_r"]
+        loop = [v for v in bm.verts if v.is_boundary and np.linalg.norm(np.array(v.co) - c) < 0.04]
         if not loop:
             continue
-        # keep the loop's order but space the verts evenly around the margin
-        # (snapping each to its own angle can land two on the same spot ->
-        # zero-length edges / degenerate triangles)
-        psis = np.array([math.atan2((np.array(v.co) - c)[2], (np.array(v.co) - c)[0] * side) for v in loop])
+        # angle around the view axis in that eye's frame (+X = world +X)
+        psis = np.array([math.atan2((np.array(v.co) - c)[2], (np.array(v.co) - c)[0]) for v in loop])
         order = np.argsort(psis)
-        start = psis[order[0]]
         n = len(loop)
-        even = start + np.arange(n) * 2 * math.pi / n
-        # align the evenly spaced set with the originals (least rotation)
+        even = psis[order[0]] + np.arange(n) * 2 * math.pi / n
         shift = np.angle(np.mean(np.exp(1j * (psis[order] - even))))
         for k, vi in enumerate(order):
-            loop[vi].co = Vector(eye_margin_positions(side, [even[k] + shift])[0])
+            loop[vi].co = Vector(landmarks.margin_point(margin, even[k] + shift))
     bm.to_mesh(obj.data)
     bm.free()
 

@@ -169,7 +169,9 @@ class MeshSDF:
     point-to-plane distance is used instead, which makes the zero level smooth
     (no scalloping between samples)."""
 
-    def __init__(self, points, normals, near=0.004):
+    FAR = 0.05   # beyond this only the sign matters (edits/blends act within ~4 cm)
+
+    def __init__(self, points, normals, near=0.004, coarse=0.006):
         from scipy.spatial import cKDTree
         self.p = np.asarray(points, np.float32)
         self.n = np.asarray(normals, np.float32)
@@ -178,6 +180,16 @@ class MeshSDF:
         self.near = near
         self.lo = self.p.min(0) - 0.002
         self.hi = self.p.max(0) + 0.002
+        # coarse inside/outside grid: the sign for points far from the surface,
+        # so the fine queries can stop at FAR (much faster KD searches)
+        self.c = coarse
+        self.g0 = self.lo - 2 * coarse
+        shape = np.ceil((self.hi - self.g0) / coarse).astype(int) + 3
+        axes = [self.g0[d] + coarse * np.arange(shape[d]) for d in range(3)]
+        G = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3).astype(np.float32)
+        _d, i = self.tree.query(G, workers=-1)
+        inside = np.einsum("ij,ij->i", G - self.p[i], self.n[i]) < 0
+        self.occ = inside.reshape(tuple(shape))
 
     def bbox(self):
         return self.lo, self.hi
@@ -185,12 +197,20 @@ class MeshSDF:
     def eval(self, P):
         shp = P.shape[:-1]
         Q = P.reshape(-1, 3)
-        dist, idx = self.tree.query(Q, workers=-1)
-        dvec = Q - self.p[idx]
-        plane = np.einsum("ij,ij->i", dvec, self.n[idx])
-        sgn = np.where(plane >= 0, 1.0, -1.0)
-        d = np.where(dist < self.near, plane, sgn * dist)
-        return d.reshape(shp).astype(np.float32)
+        dist, idx = self.tree.query(Q, distance_upper_bound=self.FAR, workers=-1)
+        far = ~np.isfinite(dist)
+        d = np.empty(len(Q), np.float32)
+        if far.any():
+            gi = np.clip(np.round((Q[far] - self.g0) / self.c).astype(int), 0, np.array(self.occ.shape) - 1)
+            d[far] = np.where(self.occ[gi[:, 0], gi[:, 1], gi[:, 2]], -self.FAR, self.FAR)
+        nf = ~far
+        if nf.any():
+            ii = idx[nf]
+            dvec = Q[nf] - self.p[ii]
+            plane = np.einsum("ij,ij->i", dvec, self.n[ii])
+            sgn = np.where(plane >= 0, 1.0, -1.0)
+            d[nf] = np.where(dist[nf] < self.near, plane, sgn * dist[nf])
+        return d.reshape(shp)
 
     def mirrored(self):
         raise NotImplementedError("the reference body is already two-sided")

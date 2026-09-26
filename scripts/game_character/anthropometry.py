@@ -151,16 +151,19 @@ def column_extent(model, x, y, z_lo, z_hi, step=0.001):
 
 def measure(model, J):
     import humanoid
+    from landmarks import LM
     M = {}
-    spine_y = lambda z: float(np.interp(z, [0.9, 1.05, 1.2, 1.35, 1.5], [0.01, 0.012, 0.018, 0.014, 0.022]))
+    sp = [J["pelvis"], J["spine_01"], J["spine_02"], J["spine_03"], J["neck_01"]]
+    spine_y = lambda z: float(np.interp(z, [p[2] for p in sp], [p[1] for p in sp]))
+    hc = np.asarray(LM["head_c"])
     # heights
-    _lo, top = column_extent(model, 0.0, 0.012, 1.6, 1.9)
+    _lo, top = column_extent(model, 0.0, float(hc[1]), 1.6, 1.9)
     M["stature"] = top
-    M["eye_height"] = float(humanoid.EYE_CENTER[2]) if hasattr(humanoid, "EYE_CENTER") else 1.684
-    chin_lo, _ = column_extent(model, 0.0, -0.085, 1.45, 1.70)
+    M["eye_height"] = float(LM["eye_l"][2])
+    chin_lo, _ = column_extent(model, 0.0, float(LM["chin"][1]), 1.45, 1.70)
     M["chin_height"] = chin_lo
     M["head_height"] = top - chin_lo if (top and chin_lo) else None
-    crotch, _ = column_extent(model, 0.0, 0.005, 0.5, 1.0)
+    crotch, _ = column_extent(model, 0.0, float(J["pelvis"][1]), 0.5, 1.0)
     M["crotch_height"] = crotch
     M["knee_height"] = float(J["calf_l"][2])
     # shoulder top above the acromion
@@ -168,29 +171,48 @@ def measure(model, J):
     _l, acr = column_extent(model, float(S[0]) - 0.01, float(S[1]), 1.3, 1.6)
     M["acromion_height"] = acr
     # head
-    hs = horizontal(model, 1.735, (0.0, 0.01), half=(0.14, 0.16))
-    M["head_breadth"] = hs["breadth"] if hs else None
-    hl = horizontal(model, 1.705, (0.0, 0.01), half=(0.14, 0.16))
-    M["head_length"] = hl["depth"] if hl else None
-    zy = horizontal(model, 1.667, (0.0, -0.02), half=(0.14, 0.16))
-    if zy:  # front of the face only: the ears sit in the same slice
-        c = zy["contour"]
-        M["bizygomatic"] = float(np.ptp(c[c[:, 1] < -0.015, 0]))
-    go = horizontal(model, 1.600, (0.0, -0.03), half=(0.14, 0.16))
+    ez = float(LM["eye_l"][2])
+    hy = float(hc[1])
+
+    def hslice(z, y0):
+        # head sections: re-center the sampling window on the head
+        from sdf import sample
+        res = 0.0015
+        cu = np.arange(-0.14, 0.14, res)
+        cv = np.arange(hy - 0.16, hy + 0.16, res)
+        U, Vv = np.meshgrid(cu, cv)
+        Pp = np.stack([U, Vv, np.full_like(U, z)], axis=-1)
+        f = sample(model, Pp.reshape(-1, 3).astype(np.float32)).reshape(U.shape)
+        xy = _contour_at(f, cu, cv, (0.0, y0))
+        return xy
+
+    c = hslice(ez + 0.051, hy)
+    M["head_breadth"] = float(np.ptp(c[:, 0])) if c is not None else None
+    c = hslice(ez + 0.021, hy)
+    M["head_length"] = float(np.ptp(c[:, 1])) if c is not None else None
+    c = hslice(ez - 0.017, hy)
+    if c is not None:  # front of the face only: the ears sit in the same slice
+        front = c[c[:, 1] < float(LM["ear_l"][1]) - 0.03]
+        M["bizygomatic"] = float(np.ptp(front[:, 0]))
+    go = None
+    c = hslice(float(LM["stomion"][2]) - 0.012, hy)
+    if c is not None:
+        front = c[c[:, 1] < float(LM["ear_l"][1]) - 0.02]
+        go = {"breadth": float(np.ptp(front[:, 0]))}
     M["bigonial"] = go["breadth"] if go else None
     # torso sections
-    nk = horizontal(model, 1.530, (0.0, 0.02), half=(0.14, 0.14))
+    nk = horizontal(model, LM["neck_base_z"] + 0.05, (0.0, LM["neck_axis_y"]), half=(0.14, 0.14))
     M["neck_circ"] = nk["circ"] if nk else None
-    ch = horizontal(model, 1.300, (0.0, spine_y(1.3)))
+    ch = horizontal(model, 1.300, (0.0, spine_y(1.3) - 0.02))
     if ch:
         M["chest_circ"], M["chest_breadth"], M["chest_depth"] = ch["circ"], ch["breadth"], ch["depth"]
-    wa = horizontal(model, 1.075, (0.0, spine_y(1.075)))
+    wa = horizontal(model, 1.075, (0.0, spine_y(1.075) - 0.02))
     if wa:
         M["waist_circ"], M["waist_breadth"], M["waist_depth"] = wa["circ"], wa["breadth"], wa["depth"]
     # hips: max circumference 0.88..1.0
     best = None
     for z in np.arange(0.88, 1.0, 0.01):
-        h = horizontal(model, z, (0.0, 0.02))
+        h = horizontal(model, z, (0.0, spine_y(z)))
         if h and (best is None or h["circ"] > best["circ"]):
             best = h
     if best:
@@ -262,6 +284,7 @@ def print_report(rows, n_ok):
 
 if __name__ == "__main__":
     import humanoid
-    m, J = humanoid.build(clothing=False, hair=False)
+    body = sys.argv[1] if len(sys.argv) > 1 else "reference"
+    m, J = humanoid.build(clothing=False, hair=False, body=body)
     rows, n_ok = report(measure(m, J))
     print_report(rows, n_ok)
