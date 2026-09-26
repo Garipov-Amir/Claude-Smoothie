@@ -180,6 +180,18 @@ def harmonic_fill(values, known, nb):
     return out
 
 
+def taubin(P, nb, w, iterations=60, lam=0.5, mu=-0.53):
+    """Taubin (lambda|mu) smoothing, weighted per vertex: removes small
+    detail (toes, grooves) without the shrinkage of plain Laplacian
+    smoothing, so the smoothed base keeps the limb's volume."""
+    A = _avg_matrix(nb)
+    Q = np.array(P, dtype=np.float64)
+    for _ in range(iterations):
+        for f in (lam, mu):
+            Q = Q + (f * w)[:, None] * (A @ Q - Q)
+    return Q
+
+
 def smooth(values, nb, free, iterations=2, factor=0.5):
     v = values.copy()
     for _ in range(iterations):
@@ -189,25 +201,206 @@ def smooth(values, nb, free, iterations=2, factor=0.5):
 
 
 # ---------------------------------------------------------------------------
+# Booted variant of the base mesh
+# ---------------------------------------------------------------------------
+
+def _walk_loop(e0):
+    """Closed edge loop through e0 across valence-4 vertices (None if the
+    loop hits a pole or does not close)."""
+    loop, v, e = [e0], e0.verts[1], e0
+    for _ in range(600):
+        if len(v.link_edges) != 4:
+            return None
+        fa = {f.index for f in e.link_faces}
+        nxt = [x for x in v.link_edges if x is not e and not ({f.index for f in x.link_faces} & fa)]
+        if len(nxt) != 1:
+            return None
+        e = nxt[0]
+        v = e.other_vert(v)
+        if e is e0:
+            return loop
+        loop.append(e)
+    return None
+
+
+def _ordered_ring(loop):
+    """Vertices of a closed edge loop in walking order."""
+    vs = [loop[0].verts[0], loop[0].verts[1]]
+    for e in loop[1:-1]:
+        vs.append(e.other_vert(vs[-1]))
+    return vs
+
+
+def forefoot_ring(bm, J, side=1):
+    """The last closed loop around the forefoot before the toes split (the
+    metatarsal-head ring): the most distal loop of >= 24 edges behind the
+    ball joint."""
+    B = np.array(J["ball_l"], dtype=np.float64)
+    T = np.array(J["toe_l"], dtype=np.float64)
+    if side < 0:
+        B[0], T[0] = -B[0], -T[0]
+    ax = T - B
+    ax[2] = 0.0
+    ax /= np.linalg.norm(ax)
+    best, seen = None, set()
+    for e in bm.edges:
+        c = 0.5 * (np.array(e.verts[0].co) + np.array(e.verts[1].co))
+        if c[0] * side < 0.05 or abs(np.dot(c - B, ax)) > 0.05 or c[2] > 0.09 or e.index in seen:
+            continue
+        dv = np.array(e.verts[1].co) - np.array(e.verts[0].co)
+        if abs(np.dot(dv / np.linalg.norm(dv), ax)) > 0.35:
+            continue
+        L = _walk_loop(e)
+        if not L:
+            continue
+        seen |= {x.index for x in L}
+        off = float(np.mean([np.dot(np.array(v.co) - B, ax) for x in L for v in x.verts]))
+        if len(L) >= 24 and off < 0 and (best is None or off > best[0]):
+            best = (off, L)
+    return (best[1] if best else None), B, ax
+
+
+def quad_cap(bm, ring, a, b):
+    """Quad grid over a closed ring of 2(a+b) vertices (Coons patch of the
+    ring as its four sides). Returns the new interior vertices."""
+    n = len(ring)
+    assert n == 2 * (a + b), (n, a, b)
+
+    def bnd(i, j):
+        if j == 0:
+            return ring[i]
+        if i == a:
+            return ring[a + j]
+        if j == b:
+            return ring[a + b + (a - i)]
+        return ring[(2 * a + b + (b - j)) % n]
+    X = lambda v: np.array(v.co, dtype=np.float64)
+    grid, new = {}, []
+    for i in range(a + 1):
+        for j in range(b + 1):
+            if i in (0, a) or j in (0, b):
+                grid[i, j] = bnd(i, j)
+                continue
+            u, v = i / a, j / b
+            p = ((1 - v) * X(bnd(i, 0)) + v * X(bnd(i, b)) + (1 - u) * X(bnd(0, j)) + u * X(bnd(a, j))
+                 - ((1 - u) * (1 - v) * X(bnd(0, 0)) + u * (1 - v) * X(bnd(a, 0))
+                    + (1 - u) * v * X(bnd(0, b)) + u * v * X(bnd(a, b))))
+            grid[i, j] = bm.verts.new(p.tolist())
+            new.append(grid[i, j])
+    for i in range(a):
+        for j in range(b):
+            bm.faces.new([grid[i, j], grid[i + 1, j], grid[i + 1, j + 1], grid[i, j + 1]])
+    return new
+
+
+def boot_feet(obj, J, log=print):
+    """Studios keep a 'shoe' variant of their base mesh: toes are wasted
+    (and impossible to lay out without folds) inside a boot. Cut both feet
+    at the metatarsal-head ring and close them with a domed quad grid; the
+    wrap then stretches that toe box over the sculpted boot."""
+    me = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    P0 = np.array([v.co[:] for v in bm.verts])
+    from scipy.spatial import cKDTree
+    twin = cKDTree(P0).query(P0 * np.array([-1.0, 1.0, 1.0]))[1]
+    loop, B, ax = forefoot_ring(bm, J, side=1)
+    if loop is None:
+        bm.free()
+        log("wrap: no forefoot ring found, feet left as they are")
+        return False
+    ring_l = _ordered_ring(loop)
+    # start at the ring's lowest medial vertex, go laterally along the sole
+    k0 = int(np.argmin([v.co.z * 4.0 + v.co.x for v in ring_l]))
+    ring_l = ring_l[k0:] + ring_l[:k0]
+    if ring_l[1].co.x < ring_l[-1].co.x:
+        ring_l = [ring_l[0]] + ring_l[1:][::-1]
+    # the right ring: the left ring's mirror twins, in the same order, so the
+    # two caps come out as exact mirror images
+    rings = {1: ring_l, -1: [bm.verts[int(twin[v.index])] for v in ring_l]}
+    ring_edges = {e.index for e in loop}
+    ring_edges |= {bm.edges.get([bm.verts[int(twin[x.verts[0].index])], bm.verts[int(twin[x.verts[1].index])]]).index
+                   for x in loop}
+    # faces in front of the ring (the toes): flood fill from the toe tips
+    front = set()
+    for side in (1, -1):
+        Bs = B * np.array([side, 1, 1]) if side < 0 else B
+        axs = ax * np.array([side, 1, 1]) if side < 0 else ax
+        seed = max((f for f in bm.faces if f.calc_center_median().x * side > 0.05 and f.calc_center_median().z < 0.1),
+                   key=lambda f: np.dot(np.array(f.calc_center_median()) - Bs, axs))
+        stack = [seed]
+        front.add(seed.index)
+        before = len(front)
+        while stack:
+            f = stack.pop()
+            for e in f.edges:
+                if e.index in ring_edges:
+                    continue
+                for g in e.link_faces:
+                    if g.index not in front:
+                        front.add(g.index)
+                        stack.append(g)
+        if len(front) - before > 0.1 * len(bm.faces):      # the ring did not close the toes off
+            bm.free()
+            log("wrap: forefoot ring does not separate the toes, feet left as they are")
+            return False
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index in front], context="FACES")
+    n = len(ring_l)
+    a = int(round(n / 2 * 0.62))      # wide across the foot, shallow top to sole
+    b = n // 2 - a
+    for side in (1, -1):
+        ring = rings[side]
+        new = quad_cap(bm, ring, a, b)
+        # dome the cap forward so its normals fan out over the toe box
+        R = np.array([v.co[:] for v in ring])
+        c = R.mean(axis=0)
+        rad = np.linalg.norm(R - c, axis=1).mean()
+        axs = ax * np.array([side, 1, 1])
+        for v in new:
+            p = np.array(v.co)
+            rho = np.linalg.norm((p - c) - np.dot(p - c, axs) * axs)
+            v.co = Vector(p + axs * 0.7 * rad * math.sqrt(max(0.0, 1.0 - (rho / rad) ** 2)))
+    bm.verts.index_update()
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    log(f"wrap: feet cut at the metatarsal ring ({n} verts), toe boxes capped {a}x{b}")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Wrap
 # ---------------------------------------------------------------------------
 
-def outer_offsets(P, N, bvh, inner, start=0.004, extra=None):
+def max_offsets(P):
+    """How far the sculpted surface may stand off the body, per vertex, from
+    the same region masks that sculpted the costume: bare skin ~0 (a longer
+    ray went through a lip or an eyelid), garments up to ~2.5 cm, hair ~4 cm."""
+    import costume
+    if not costume.GEAR:                 # no costume on this model
+        return np.full(len(P), 0.004)
+    rid = costume.region_id(np.asarray(P, np.float32), LM["J"])
+    dm = np.full(len(P), 0.028)
+    dm[rid == costume.SKIN] = 0.004
+    dm[rid == costume.HAIR] = 0.045
+    return dm
+
+
+def outer_offsets(P, N, bvh, inner, dmax, start=0.004):
     """Offset along the limit normal to the outer high-poly surface, and
-    whether it can be trusted. `extra`: per-vertex allowance on top of the
-    garment thickness (how far a smoothed base sits inside the body)."""
-    eye_z = float(LM["eye_l"][2])
+    whether it can be trusted (a hit within dmax that faces the same way)."""
     d = np.zeros(len(P))
     ok = np.zeros(len(P), dtype=bool)
     for i, (p, n) in enumerate(zip(P, N)):
         if inner[i]:
             ok[i] = True             # socket / mouth bag: stays on the body
             continue
-        # garments are a few mm to ~2 cm thick; hair can stand ~4 cm off the scalp
-        dmax = 0.045 if p[2] > eye_z - 0.03 else 0.028
-        if extra is not None:
-            dmax += extra[i]
-        hit, hn, _f, dist = bvh.ray_cast(Vector(p - n * start), Vector(n), dmax + start)
+        dmax_i = dmax[i]
+        hit, hn, _f, dist = bvh.ray_cast(Vector(p - n * start), Vector(n), dmax_i + start)
         if hit is None or Vector(n).dot(hn) < 0.2:
             continue
         d[i] = dist - start
@@ -295,7 +488,22 @@ def symmetrize(obj, mi):
     _set_co(me, co)
 
 
-def wrap(obj, hp, log=print):
+def keep_sides(obj, P, eps=0.0006):
+    """A vertex never crosses the mirror plane to the other side (where the
+    sculpt bridges the midline — trousers over the gluteal cleft — offsets
+    from both sides would otherwise meet and pass through each other). With
+    the left side kept at x >= eps and the right at x <= -eps, the two
+    halves of a symmetric mesh cannot intersect."""
+    me = obj.data
+    co = np.array([v.co[:] for v in me.vertices])
+    side = np.sign(np.where(np.abs(P[:, 0]) > 1e-5, P[:, 0], 0.0))
+    bad = (side != 0) & (co[:, 0] * side < eps)
+    co[bad, 0] = side[bad] * eps
+    _set_co(me, co)
+    return int(bad.sum())
+
+
+def wrap(obj, hp, log=print, repair_rounds=0):
     from mathutils.bvhtree import BVHTree
     me = obj.data
     dg = bpy.context.evaluated_depsgraph_get()
@@ -303,7 +511,8 @@ def wrap(obj, hp, log=print):
     P, N = limit_frame(obj)
     inner = interior_vertices(me)
     nb = neighbours(me)
-    d, ok = outer_offsets(P, N, bvh, inner)
+    dmax = max_offsets(P)
+    d, ok = outer_offsets(P, N, bvh, inner, dmax)
     log(f"wrap: {int(ok.sum())}/{len(ok)} offsets from rays, {int(inner.sum())} interior verts kept on the body")
     d = harmonic_fill(d, ok, nb)
     d = smooth(d, nb, ~inner, iterations=2, factor=0.5)
@@ -320,18 +529,19 @@ def wrap(obj, hp, log=print):
     # covering surface. There the template is smoothed first (toes merge into
     # a sock, the cleft fills in) and rays are cast from the smooth base.
     # Vertices next to the socket / mouth bags stay put (lid and lip lines).
+    import costume
     keep = dilate(inner, nb, rings=2)
     w = np.clip((d - 0.003) / 0.004, 0.0, 1.0)
+    if costume.GEAR:
+        rid = costume.region_id(np.asarray(P, np.float32), LM["J"])
+        w[np.isin(rid, (costume.BOOTS, costume.SOLE))] = 1.0    # toes inside the boots
     w = np.maximum(w, dilate(w > 0.5, nb, rings=3).astype(np.float64))
     w[keep] = 0.0
-    A = _avg_matrix(nb)
-    Ps = P.copy()
-    for _ in range(40):
-        Ps = Ps + (0.5 * w)[:, None] * (A @ Ps - Ps)
+    Ps = taubin(P, nb, w, iterations=60)
     _set_co(me, Ps)
     Ns = _normals(me)
     cov = w > 0
-    d2, ok2 = outer_offsets(Ps, Ns, bvh, inner, extra=np.linalg.norm(Ps - P, axis=1) + 0.004)
+    d2, ok2 = outer_offsets(Ps, Ns, bvh, inner, dmax + np.linalg.norm(Ps - P, axis=1) + 0.004)
     base, dirs = P.copy(), N.copy()
     base[cov], dirs[cov] = Ps[cov], Ns[cov]
     d[cov] = d2[cov]
@@ -344,8 +554,12 @@ def wrap(obj, hp, log=print):
     _set_co(me, co)
     if mi is not None:
         symmetrize(obj, mi)
-    # then work out any remaining fold: relax just around it, a few rounds
-    for r in range(8):
+        n = keep_sides(obj, P)
+        if n:
+            log(f"wrap: {n} verts held on their side of the mirror plane")
+    # optional: relax around any remaining fold (off by default: relaxing a
+    # fold in place tends to oscillate rather than resolve it)
+    for r in range(repair_rounds):
         vi, npairs = intersecting_verts(obj)
         log(f"wrap: round {r}: {npairs} self-intersecting face pairs")
         if npairs == 0:
@@ -437,7 +651,10 @@ def build_lods(J, hp_obj, cache, name="SK_Character", hp_pouch=None, log=print):
     import lods
     import retopo
     import uvs
+    import costume
     lod0 = template_object(f"{name}_LOD0", cache)
+    if "boots" in costume.GEAR:
+        boot_feet(lod0, J, log=log)
     wrap(lod0, hp_obj, log=log)
     part_labels(lod0, J)
     pouches = []

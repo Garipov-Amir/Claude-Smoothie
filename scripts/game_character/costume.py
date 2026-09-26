@@ -266,6 +266,7 @@ def boots(m, J):
     A, B = np.asarray(J["foot_l"], np.float32), np.asarray(J["ball_l"], np.float32)
     parts = []
     shaft_top = np.array([A[0] - 0.002, A[1] - 0.012, 0.345], np.float32)
+    GEAR["boots"] = {"top_z": float(shaft_top[2])}   # the low-poly swaps toes for a toe box
     parts.append((RoundCone(shaft_top, A + np.array([0, 0.004, 0.01], np.float32), 0.056, 0.046), 0.0))
     parts.append((Ellipsoid(A + np.array([0, 0.030, -0.030], np.float32), (0.044, 0.052, 0.060)), 0.03))  # heel counter
     parts.append((RoundCone(A + np.array([0, -0.010, -0.010], np.float32), B + np.array([0, 0, 0.022], np.float32), 0.044, 0.032), 0.03))  # instep
@@ -360,6 +361,7 @@ def hair(m, J, top=0.0160, side=0.0065):
 
 
 def dress(m, J, hair_on=True):
+    GEAR.clear()
     shirt(m, J)
     trousers(m, J)
     jerkin(m, J)
