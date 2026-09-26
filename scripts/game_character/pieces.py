@@ -236,7 +236,7 @@ def horns(m, J, p):
         return f + 0.0009 * sh * size * (0.5 + 0.5 * np.sin(np.linalg.norm(P - c, axis=-1) * 2 * math.pi / (0.008 * sh)))
     lo, hi = _bbox(allpts, 0.03 * sh * size)
     pm.edit(rings, lo, hi)
-    _add("Horns", "horns", pm, lo, hi, "head", {"material": "horn", "color": p["color"]}, faces=560)
+    _add("Horns", "horns", pm, lo, hi, "head", {"material": "horn", "color": p["color"]}, faces=1100)
 
 
 def tusks(m, J, p):
@@ -258,7 +258,7 @@ def tusks(m, J, p):
         _tube(pm, pts, [r0 * (1 - 0.8 * (i / 6) ** 1.3) for i in range(7)], k=0.002)
         allpts += pts
     lo, hi = _bbox(allpts, 0.012 * sh * size)
-    _add("Tusks", "tusks", pm, lo, hi, "head", {"material": "horn", "color": p["color"]}, faces=240)
+    _add("Tusks", "tusks", pm, lo, hi, "head", {"material": "horn", "color": p["color"]}, faces=480)
 
 
 def pauldrons(m, J, p):

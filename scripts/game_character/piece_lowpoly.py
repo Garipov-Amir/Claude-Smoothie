@@ -81,9 +81,34 @@ def dome_cage(name, frame, n_around=8, n_rings=2):
     return o
 
 
+def _quadriflow(o, faces):
+    """QuadriFlow at unit scale: its manifold check uses absolute tolerances
+    and rejects a clean 3 cm tusk that it accepts once scaled to ~1 m."""
+    me = o.data
+    co = np.array([v.co[:] for v in me.vertices])
+    c = co.mean(axis=0)
+    k = 1.0 / max(float(np.ptp(co, axis=0).max()), 1e-6)
+    me.vertices.foreach_set("co", ((co - c) * k).reshape(-1))
+    me.update()
+    U.select_only([o])
+    try:
+        r = bpy.ops.object.quadriflow_remesh(target_faces=max(int(faces), 24), use_mesh_symmetry=False,
+                                             use_preserve_sharp=False, use_preserve_boundary=False,
+                                             smooth_normals=False, mode="FACES", seed=0)
+        ok = "FINISHED" in r and len(o.data.polygons) > 0 and all(len(p.vertices) == 4 for p in o.data.polygons)
+    except RuntimeError:
+        ok = False
+    me = o.data
+    co2 = np.array([v.co[:] for v in me.vertices])
+    me.vertices.foreach_set("co", (co2 / k + c).reshape(-1))
+    me.update()
+    return ok
+
+
 def remesh(hp, name, faces, log=print):
-    """Quad remesh of a high-poly piece to ~`faces` quads (QuadriFlow),
-    snapped back onto the high-poly."""
+    """Quad remesh of a high-poly piece to ~`faces` quads (QuadriFlow, one
+    connected part at a time — it fails on disjoint parts such as a pair of
+    horns), snapped back onto the high-poly."""
     import retopo
     o = U.duplicate(hp, name)
     o.modifiers.clear()
@@ -93,20 +118,58 @@ def remesh(hp, name, faces, log=print):
         d.ratio = 40000 / len(o.data.polygons)
         U.select_only([o])
         bpy.ops.object.modifier_apply(modifier=d.name)
+    # QuadriFlow needs a clean manifold with consistent winding: marching
+    # cubes leaves duplicate verts and slivers at thin tips
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-6, edges=bm.edges)
+    bad = [e for e in bm.edges if not e.is_manifold]
+    if bad:
+        bmesh.ops.delete(bm, geom=list({f for e in bad for f in e.link_faces}), context="FACES")
+        bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], sides=0)
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(o.data)
+    bm.free()
     U.select_only([o])
-    ok = False
-    try:
-        r = bpy.ops.object.quadriflow_remesh(target_faces=int(faces), use_mesh_symmetry=False, use_preserve_sharp=False,
-                                             use_preserve_boundary=False, smooth_normals=False, mode="FACES", seed=0)
-        ok = "FINISHED" in r and len(o.data.polygons) > 0 and all(len(p.vertices) == 4 for p in o.data.polygons)
-    except RuntimeError as e:
-        log(f"{name}: quadriflow failed ({e})")
-    if not ok:     # fallback: a plain decimation to the same budget
-        log(f"{name}: quadriflow unavailable, decimating instead")
-        d = o.modifiers.new("dec", "DECIMATE")
-        d.ratio = min(1.0, 2.0 * faces / max(len(o.data.polygons), 1))
-        bpy.ops.object.modifier_apply(modifier=d.name)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.separate(type="LOOSE")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    parts = [p for p in bpy.context.selected_objects if p.type == "MESH"]
+    areas = [sum(f.area for f in p.data.polygons) for p in parts]
+    total = sum(areas) or 1.0
+    done = []
+    for p, a in zip(parts, areas):
+        if len(p.data.polygons) < 8:          # marching-cubes crumbs
+            bpy.data.objects.remove(p, do_unlink=True)
+            continue
+        if not _quadriflow(p, faces * a / total):
+            log(f"{name}: quadriflow failed on a part, decimating it instead")
+            d = p.modifiers.new("dec", "DECIMATE")
+            d.ratio = min(1.0, 2.0 * faces * a / total / max(len(p.data.polygons), 1))
+            U.select_only([p])
+            bpy.ops.object.modifier_apply(modifier=d.name)
+        done.append(p)
+    U.select_only(done, done[0])
+    if len(done) > 1:
+        bpy.ops.object.join()
+    o = bpy.context.view_layer.objects.active
+    o.name = o.data.name = name
     retopo.project_nearest(o, retopo.Surface(hp), iters=2)
+    import lods
+    _vi, n = lods._crossing_verts(o)
+    if n:
+        # snapping a coarse quad ring onto a sharp tip can fold it: fall back
+        # to a clean collapse decimation of the high-poly for this piece
+        log(f"{name}: remesh folded ({n} crossing pairs), using a decimated high-poly instead")
+        bpy.data.objects.remove(o, do_unlink=True)
+        src = U.duplicate(hp, name + "_src")
+        src.modifiers.clear()
+        o = lods.decimated(src, name, min(1.0, 2.0 * faces / max(len(src.data.polygons), 1)), log=log)
+        bpy.data.objects.remove(src, do_unlink=True)
     return o
 
 
