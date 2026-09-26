@@ -53,6 +53,8 @@ detail — choose sensible values and say what you chose:
 - **Outfit**: garment layers (shirt, trousers, vest, belt, boots/shoes,
   gloves, bracers) with sleeves/neck/length options and materials.
 - **Pieces**: ponytail/bun, long beard, horns, tusks, pauldrons, pouch.
+  Omitted fields come from the Ranger preset — lists too: write
+  `"pieces": []` when there are none, or the character gets the Ranger's pouch.
 - **Things outside the library** (see Limits): pick the closest supported
   option, and tell the user what was substituted.
 

@@ -2,6 +2,10 @@
 
 A character is one JSON object. Everything is optional: missing fields come
 from the default ("Ranger", `scripts/game_character/presets/ranger.json`).
+That includes the lists: a spec without `"outfit"` wears the Ranger's
+clothes and one without `"pieces"` gets the Ranger's belt pouch — write
+`"pieces": []` (or `"outfit": []` for a nude body) when the character has
+none.
 `spec.resolve()` validates it and names the field and the allowed values on
 any mistake. Colors are sRGB `"#rrggbb"` (or `[r, g, b]` in 0..1). Lengths
 are meters.
