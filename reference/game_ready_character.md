@@ -189,6 +189,18 @@ surface, so every template vertex has an exact anchor:
    decimator work symmetrically), and **no vertex may cross the mirror plane**:
    with the left half at x ≥ 0.6 mm and the right at x ≤ −0.6 mm the halves
    cannot pass through each other where the sculpt bridges the midline.
+6. **Hands are special**: fingers are separate tubes in any real garment,
+   but a glove's offset shell merges fingers that nearly touch, and a ray
+   from one finger exits on the far side of the next. On the hands an
+   offset never exceeds 45 % of the gap to the next body surface along the
+   normal, and nothing there is re-cast from a smoothed base. Neither is
+   anything within 5 rings of the lips and lids (a beard follows the face a
+   few mm off; a smoothed base there is pulled through the lips).
+7. **Last resort — pull back**: whatever still crosses gets its offsets
+   halved (with a 1-ring margin, mirrored) until nothing does. Where the base
+   is the template's own limit surface this converges by construction —
+   offset 0 is intersection-free. Typical: 0–2 rounds; a bearded, heavy-jawed
+   face 5–6.
 
 **Booted variant.** Toes cannot be laid onto a boot without folding: fixed
 topology, five separate digits, one toe box. Every smoothing/inflation scheme
@@ -541,4 +553,29 @@ walk take, textures embedded in the GLB.
 - **Texture regions follow the geometry masks, not the style name**: the
   mohawk's shaved sides were textured as hair because the style reused the
   short-hair cap mask; region masks must be exactly the sculpted strip.
+- **Bricks must agree bit-for-bit on their shared layer.** The sparse
+  polygonizer evaluated each brick from a float32 origin: the shared sample
+  layer of two bricks sat ~1e-7 m apart, and where the surface grazed it the
+  two marching-cubes halves did not weld (piece high-polys had 14–166 open
+  edges). Sample coordinates in float64, rounded once; then weld seam
+  vertices by distance (values still differ by 1 ulp between differently
+  shaped blocks, and a rounded-key weld splits pairs across a grid line).
+- **Offsets smoothed into a ring you meant to pin**: lips were set to offset
+  0, then an offset-smoothing pass lifted them by a neighboring beard's
+  thickness and the closed lips passed into each other. Re-pin after every
+  pass that touches the values.
+- **Masks by radius from a bone miss spread fingers**: a big hand's
+  fingertips are 3.6 forearm radii off the forearm axis, so "not near the
+  forearm" left them to the trousers and belt. Use capsules around the
+  palm and every finger segment, sized to the hand.
+- **Don't ask a morph target to do a smoothing job**: MakeHuman's
+  nipple-decr targets dent a small nipple into a dimple and still leave a
+  bump on a full breast; a quadratic fitted to the surrounding skin turns a
+  breast's apex into a plateau. A cotangent bilaplacian fill of the height
+  field from the surrounding skin gives the smooth continuation on every
+  body.
+- **A landmark derived from joint positions can be off by centimeters on
+  another body**: the neck base from "neck joint − 0.72 neck lengths" was
+  5.6 cm low on a female body (off-the-shoulder necklines). Measure it on
+  the surface (the jugular notch).
 
