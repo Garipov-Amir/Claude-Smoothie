@@ -72,6 +72,9 @@ def skeleton_from_reference(ref):
     return J
 
 
+NOTCH_TO_NECKLINE = 0.016     # m under the jugular notch (Ranger scale): where the garment necklines sit
+
+
 def from_reference(ref, J):
     """Face / head / torso landmarks measured on the reference surface."""
     V = ref["verts"]
@@ -135,10 +138,22 @@ def from_reference(ref, J):
     L["chin_z"] = float(L["chin"][2])
     sh = (L["head_top"] - L["chin_z"]) / 0.237          # head size relative to the Ranger's
     L["brow_z"] = eye[2] + 0.022 * sh
-    # neck: base (sternal notch height, ~0.72 neck-joint-to-head lengths under
-    # the neck joint) and axis
+    # neck: axis, and base = where necklines sit, a little under the jugular
+    # (suprasternal) notch: the most posterior point of the front midline
+    # between the larynx and the sternum. (Placed from the joints alone — the
+    # neck joint minus 0.72 neck lengths — it landed 5 cm low on a female
+    # body and her crew neck became an off-the-shoulder cut.)
     L["neck_axis_y"] = float(J["neck_01"][1])
-    L["neck_base_z"] = float(J["neck_01"][2]) - 0.72 * float(np.linalg.norm(J["head"] - J["neck_01"]))
+    front = P[(np.abs(P[:, 0]) < 0.01) & (P[:, 1] < L["neck_axis_y"])]
+    cz = float(L["chin"][2])
+    zn = np.arange(cz - 0.20 * hs, cz - 0.03 * hs, 0.002)
+    fy = np.array([front[np.abs(front[:, 2] - z) < 0.003, 1].min() if (np.abs(front[:, 2] - z) < 0.003).any()
+                   else np.nan for z in zn])
+    ok = ~np.isnan(fy)
+    fy = np.convolve(np.interp(zn, zn[ok], fy[ok]), np.ones(5) / 5, mode="same")
+    inner = slice(2, len(zn) - 2)
+    L["jugular_notch_z"] = float(zn[inner][np.argmax(fy[inner])])
+    L["neck_base_z"] = L["jugular_notch_z"] - NOTCH_TO_NECKLINE * hs
     L["shoulder_z"] = float(J["upperarm_l"][2])
     # limb radii (median skin distance from the bone, mid-segment)
     for nm, a, b in (("r_upperarm", "upperarm_l", "lowerarm_l"), ("r_forearm", "lowerarm_l", "hand_l"),
