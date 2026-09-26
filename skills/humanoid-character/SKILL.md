@@ -113,14 +113,21 @@ Restart from a stage with `--from <stage>`:
 Read every sheet in `<out>/showcase/`: `highpoly` (sculpt), `topology`
 (real edges: face loops, hands), `textures` (BaseColor, normal, ORM, UV
 layout), `beauty` (engine-style material), `head`, `lods`, `walk`, `poses`
-(arms up, crouch, fists). Then `report.json`, per LOD:
+(arms up, crouch, fists). Then the validation report:
+
+```bash
+python check_report.py <out>          # PASS/FAIL per check, exit 1 on failure
+```
+
+It checks, per LOD:
 
 - `watertight: true`, `self_intersecting_face_pairs: 0`, `non_manifold_edges: 0`,
   `degenerate_faces: 0`, `ngons: 0`
 - `uv_inside_0_1: true`, `uv_overlap_fraction` ≈ 0 (LOD0 exactly 0)
 - `max_influences ≤ 4`, `unweighted_verts: 0`, `weights_normalized: true`
 - `piece_contact_face_pairs` > 0 is fine (a pouch resting on a hip)
-- skeleton: 63 bones, `single_root`, no `missing_humanoid_bones`
+- skeleton: 63 bones, `single_root`, no `missing_humanoid_bones`;
+  textures power of two; all FBX/GLB files written
 
 Fix what fails (below), rebuild, re-check. Report numbers to the user, not
 adjectives.
