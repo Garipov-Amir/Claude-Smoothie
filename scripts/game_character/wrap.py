@@ -573,6 +573,7 @@ def wrap(obj, hp, log=print, repair_rounds=0):
     log(f"wrap: {int(ok.sum())}/{len(ok)} offsets from rays, {int(inner.sum())} interior verts kept on the body")
     d = harmonic_fill(d, ok, nb)
     d = smooth(d, nb, ~inner, iterations=2, factor=0.5)
+    d[keep] = 0.0            # smoothing must not lift the lips off each other (a beard next to them)
     # the template is mirror-symmetric: keep the game mesh symmetric too
     # (asymmetric sculpt noise lives in the normal map), which also lets the
     # LOD decimation work symmetrically
@@ -594,7 +595,11 @@ def wrap(obj, hp, log=print, repair_rounds=0):
         kinds = np.array([costume.region_kind(r) for r in range(len(costume.region_names()))])
         w[np.isin(kinds[rid], ("footwear", "sole"))] = 1.0      # toes inside the boots
     w = np.maximum(w, dilate(w > 0.5, nb, rings=3).astype(np.float64))
-    w[keep | hand] = 0.0
+    # around the mouth and eyes nothing is covered detail: a beard follows the
+    # face a few mm off, and a smoothed base there is pulled through the lips
+    # (then no offset, however small, clears them)
+    face = dilate(keep, nb, rings=5)
+    w[face | hand] = 0.0
     Ps = taubin(P, nb, w, iterations=60)
     _set_co(me, Ps)
     Ns = _normals(me)
