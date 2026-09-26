@@ -546,7 +546,10 @@ def hair_mask(P, h=None):
     z = P[..., 2]
     sh = LM["s_head"]
     near = np.linalg.norm(d, axis=-1) < 0.16 * sh
-    return smoothstep(zl - 0.002 * sh, zl + 0.024 * sh, z) ** 2.0 * (1.0 - ear_mask(P)) * near
+    m = smoothstep(zl - 0.002 * sh, zl + 0.024 * sh, z) ** 2.0 * (1.0 - ear_mask(P)) * near
+    if h.get("style") == "mohawk":      # shaved sides stay skin; the strip is hair
+        m = m * smoothstep(0.040 * sh, 0.026 * sh, np.abs(P[..., 0]))
+    return m
 
 
 HAIR_SPEC = {"hairline": "receding", "style": "short"}
@@ -579,7 +582,8 @@ def hair(m, J, h):
         top_c = fbm(P * np.array([1.0, 0.22, 1.0], np.float32), 160.0 / sh, 3, seed=51)
         side_c = fbm(P * np.array([1.0, 1.0, 0.25], np.float32), 160.0 / sh, 3, seed=53)
         clumps = clump * (vert * top_c + (1 - vert) * side_c) + 0.66 * clump * fbm(P, 45.0 / sh, 2, seed=52)
-        return f - hair_mask(P, h) * (thick + clumps)
+        cap = hair_mask(P, dict(h, style="short"))      # the whole scalp (shaved sides get the thin shell)
+        return f - cap * (thick + clumps)
 
     c = head_c()
     m.edit(fn, (-0.13 * sh, c[1] - 0.17 * sh, ez - 0.12 * sh), (0.13 * sh, c[1] + 0.17 * sh, LM["head_top"] + 0.05 * sh))
