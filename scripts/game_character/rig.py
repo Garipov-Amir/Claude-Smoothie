@@ -420,6 +420,12 @@ def walk_cycle(arm_obj, frames=32, name="Walk"):
     act = bpy.data.actions.new(name)
     arm_obj.animation_data.action = act
     P = arm_obj.pose.bones
+    # the walk's elbow bend is absolute (14-24 deg from a straight arm): a
+    # rest pose with bent elbows (the reference's is ~46 deg) gets extended
+    B = arm_obj.data.bones
+    u = (B["upperarm_l"].tail_local - B["upperarm_l"].head_local).normalized()
+    v = (B["lowerarm_l"].tail_local - B["lowerarm_l"].head_local).normalized()
+    rest_elbow = math.degrees(u.angle(v))
     for f in range(frames + 1):
         ph = 2 * math.pi * f / frames
         for sfx, off in (("_l", 0.0), ("_r", math.pi)):
@@ -431,7 +437,7 @@ def walk_cycle(arm_obj, frames=32, name="Walk"):
             _rot(P["foot" + sfx], x=-10 * s - 8 * max(0.0, c))
             _rot(P["ball" + sfx], x=12 * max(0.0, -s) * max(0.0, -c) * 2)
             _rot(P["upperarm" + sfx], x=20 * s, z=sgn * 38)  # +Z lowers the arm from the A-pose
-            _rot(P["lowerarm" + sfx], x=-(14 + 10 * max(0.0, -s)))
+            _rot(P["lowerarm" + sfx], x=rest_elbow - (14 + 10 * max(0.0, -s)))   # -X flexes
             _rot(P["hand" + sfx], x=-6)
             for fg in FINGERS:
                 for i in (1, 2, 3):

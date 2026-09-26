@@ -186,7 +186,7 @@ LODs, FBX/GLB. Full technique, numbers and pitfalls:
 
 ```bash
 pip install bpy scikit-image scipy pillow        # if no Blender install; or use Blender's python
-python scripts/game_character/build_character.py <out> --res 2048   # ~5 min on 4 cores
+python scripts/game_character/build_character.py <out> --res 2048   # ~12 min on 4 cores
 python scripts/game_character/verify_export.py <out>/export/SK_Character.glb
 cat <out>/export/report.json                                          # validation numbers
 ```

@@ -7,7 +7,7 @@ validation report. Every stage is a plain Python module driving Blender
 (`bpy`), so it runs headless, on CI, or in a cloud container.
 
 ```bash
-# one command, all stages (≈4–6 min at 2K textures on 4 CPU cores)
+# one command, all stages (≈12 min at 2K textures on 4 CPU cores, 7 of them the sculpt)
 python scripts/game_character/build_character.py <out_dir> --res 2048
 # re-run from any stage after an edit
 python scripts/game_character/build_character.py <out_dir> --from bake --res 4096
@@ -280,15 +280,23 @@ functions:
 
 ## 7. LODs (`lods.py`)
 
-| LOD | How | Tris (this character) | Typical screen size |
+| LOD | How (wrapped template) | Tris incl. pouch | Typical screen size |
 |---|---|---|---|
-| LOD0 | cage × 2 subdivisions, projected | 43.6 k | close-up / hero |
-| LOD1 | LOD0 collapse-decimated 50 %, face + hands protected | 21.8 k | 0.5 |
-| LOD2 | cage × 1 subdivision, projected (clean quads again) | 10.9 k | 0.25 |
-| LOD3 | LOD2 decimated 50 % | 5.5 k | 0.12 |
-| LOD4 | the cage | 2.7 k | 0.06 / crowds |
+| LOD0 | the wrapped base mesh, triangulated | 24.5 k | close-up / hero |
+| LOD1 | LOD0 collapse-decimated 50 % | 12.3 k | 0.5 |
+| LOD2 | LOD0 decimated to 25 % | 6.1 k | 0.25 |
+| LOD3 | LOD2 decimated 50 % | 3.1 k | 0.12 |
+| LOD4 | LOD0 decimated to 6.25 % | 1.5 k | 0.06 / crowds |
 
-Eyes: 768-tri spheres on LOD0–2, 192-tri on LOD3–4. All LODs share the
+(The designed-cage route uses cage × 2 / cage × 1 / cage subdivisions for
+LOD0/2/4 instead.) Decimation is symmetric, slowed down on the face and
+hands with a protection group whose weight is capped below 1, and
+**self-checking**: a collapse can fold a narrow crease (gluteal cleft,
+crotch) into itself, so each result is tested for crossing faces and the
+source vertices around any crossing are frozen and the decimation redone
+(one retry, 38 frozen vertices, on this character). Gear pieces have their
+own LOD4/LOD2/LOD0 (box cage subdivisions) and are joined into each body LOD.
+Eyes: 720-tri spheres on LOD0–2, 168-tri on LOD3–4. All LODs share the
 material and UV layout.
 
 ## 8. Export (`build_export.py`, `verify_export.py`)
@@ -306,13 +314,23 @@ material and UV layout.
 
 ## 9. Validation report (`export/report.json`)
 
-Per LOD: tris/verts, quads/n-gons, non-manifold and boundary edges (eye holes
-only), degenerate faces, loose verts, UVs inside 0–1, UV coverage and overlap,
-max influences, unweighted verts, normalized weights, applied transforms.
-Source topology: quad ratio, poles by valence, quad-angle deviation.
-Skeleton: bone count, single root at origin, required humanoid bones present.
-Textures: sizes and power-of-two. Current build: all LODs 0 n-gons, 0
-non-manifold, 0 degenerate, 0 UV overlap, ≤ 4 influences, 0 unweighted.
+Per LOD: tris/verts, quads/n-gons, **watertight** (no boundary and no
+non-manifold edges), **self-intersecting face pairs within a mesh piece**
+(BVH overlap of faces that share no vertex) reported separately from
+**contacts between pieces** (gear resting on / sunk into the body is how game
+gear is built), degenerate faces, loose verts, UVs inside 0–1, UV coverage and
+overlap, max influences, unweighted verts, normalized weights, applied
+transforms. Source topology: quad ratio, poles by valence, quad-angle
+deviation. Skeleton: bone count, single root at origin, required humanoid
+bones present. Textures: sizes and power-of-two.
+
+Current build, all five LODs: watertight, **0 self-intersecting face pairs**,
+0 non-manifold, 0 boundary, 0 degenerate, 0 n-gons, UVs in 0–1, ≤ 4
+influences, 0 unweighted, weights normalized; UV overlap 0 on LOD0/1/3 and
+< 0.2 % on the decimated LOD2/LOD4 (collapses across UV seams). LOD0 source:
+100 % quads, 136 × valence-3 and 120 × valence-5 poles, median quad-corner
+deviation 8°. `verify_export.py` re-imports GLB and FBX: 63 bones, skinned,
+walk take, textures embedded in the GLB.
 
 ## Budgets worth knowing
 
