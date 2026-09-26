@@ -301,6 +301,11 @@ class Volume:
     def __init__(self, bmin, bmax, voxel=0.003):
         self.voxel = float(voxel)
         self.origin = v3(bmin)
+        # sample coordinates are computed in float64 and rounded once: two
+        # bricks sharing a sample layer then evaluate it at bit-identical
+        # points (float32 origin + float32 steps differed by ~1e-7 m, enough
+        # to open cracks along brick seams where the surface grazes the layer)
+        self._o64 = np.asarray(bmin, dtype=np.float64)
         self.shape = tuple(int(math.ceil((bmax[i] - bmin[i]) / voxel)) + 1 for i in range(3))
         self.field = np.full(self.shape, self.FAR, dtype=np.float32)
 
@@ -317,7 +322,8 @@ class Volume:
         if np.any(i1 <= i0):
             return None, None
         sl = tuple(slice(int(i0[d]), int(i1[d])) for d in range(3))
-        axes = [self.origin[d] + self.voxel * np.arange(i0[d], i1[d], dtype=np.float32) for d in range(3)]
+        axes = [(self._o64[d] + self.voxel * np.arange(i0[d], i1[d], dtype=np.float64)).astype(np.float32)
+                for d in range(3)]
         P = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1)
         return sl, P
 
@@ -357,7 +363,7 @@ class Volume:
         f = self.field[::step, ::step, ::step] if step > 1 else self.field
         verts, faces, _n, _v = marching_cubes(f, level=0.0, spacing=(self.voxel * step,) * 3,
                                               allow_degenerate=False)
-        verts = verts + self.origin
+        verts = verts + self._o64
         # skimage's default ("descent") winding already gives outward normals
         # for a negative-inside SDF (checked: positive signed volume)
         return verts.astype(np.float32), faces.astype(np.int32)
@@ -377,7 +383,7 @@ def _brick_job(b):
     if f.min() >= 0 or f.max() <= 0:
         return None
     v, fc, _nn, _vv = marching_cubes(f, level=0.0, spacing=(voxel,) * 3, allow_degenerate=False)
-    return (v + vol.origin).astype(np.float64), fc.astype(np.int64)
+    return v + vol._o64, fc.astype(np.int64)
 
 
 def sparse_polygonize(model, bmin, bmax, voxel=0.0012, brick=40, workers=None, log=None):
@@ -417,10 +423,27 @@ def sparse_polygonize(model, bmin, bmax, voxel=0.0012, brick=40, workers=None, l
         nv += len(r[0])
     V = np.concatenate(all_v)
     Fc = np.concatenate(all_f)
-    key = np.round(V / (voxel * 1e-3)).astype(np.int64)
-    _u, idx, inv = np.unique(key, axis=0, return_index=True, return_inverse=True)
-    V = V[idx]
-    Fc = inv.reshape(-1)[Fc]
+    # weld the bricks: only vertices on shared brick faces are duplicated.
+    # Both copies agree to ~1e-9 m but not bitwise (the field is evaluated in
+    # differently shaped blocks), so rounding them to a key grid split pairs
+    # that straddled a grid line and left cracks: match them by distance.
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial import cKDTree
+    rel = (V - bmin) / (voxel * brick)
+    on = np.nonzero(np.any(np.abs(rel - np.round(rel)) < 1e-3, axis=1))[0]
+    pairs = cKDTree(V[on]).query_pairs(voxel * 1e-3, output_type="ndarray")
+    rep = np.arange(len(V))
+    if len(pairs):
+        n = len(on)
+        g = coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(n, n))
+        _nc, lab = connected_components(g, directed=False)
+        first = np.full(lab.max() + 1, len(V))
+        np.minimum.at(first, lab, on)
+        rep[on] = first[lab]
+    keep, inv = np.unique(rep, return_inverse=True)
+    V = V[keep]
+    Fc = inv[Fc]
     ok = (Fc[:, 0] != Fc[:, 1]) & (Fc[:, 1] != Fc[:, 2]) & (Fc[:, 0] != Fc[:, 2])
     return V.astype(np.float32), Fc[ok].astype(np.int32)
 
