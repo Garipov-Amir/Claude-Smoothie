@@ -83,10 +83,13 @@ def from_reference(ref, J):
     L["eye_l"] = eye
     L["eye_r_radius"] = float(ref["eye_radius"]["l"]) * 0.78
     L["head_top"] = float(P[:, 2].max())
+    # search windows are sized for the Ranger's head and scaled by the eyeball,
+    # which grows with the head (a goblin's is 0.67x, a dwarf's 0.83x)
+    hs = float(ref["eye_radius"]["l"]) / 0.0165
     mid = P[np.abs(P[:, 0]) < 0.004]
-    face = mid[(mid[:, 2] > eye[2] - 0.16) & (mid[:, 2] < eye[2] + 0.02)]
+    face = mid[(mid[:, 2] > eye[2] - 0.16 * hs) & (mid[:, 2] < eye[2] + 0.02 * hs)]
     # profile of the face midline: most anterior point per height
-    zs = np.arange(eye[2] - 0.15, eye[2] + 0.015, 0.001)
+    zs = np.arange(eye[2] - 0.15 * hs, eye[2] + 0.015 * hs, 0.001)
     prof = []
     for z in zs:
         sl = face[np.abs(face[:, 2] - z) < 0.0015]
@@ -94,17 +97,17 @@ def from_reference(ref, J):
     prof = np.array(prof)
     ok = ~np.isnan(prof)
     zs, prof = zs[ok], prof[ok]
-    i_nose = int(np.argmin(np.where(zs < eye[2] - 0.02, prof, 9)))
+    i_nose = int(np.argmin(np.where(zs < eye[2] - 0.02 * hs, prof, 9)))
     L["nose_tip"] = _v(0, prof[i_nose], zs[i_nose])
     # below the nose: upper lip max, stomion (dip), lower lip max, chin
-    below = zs < zs[i_nose] - 0.012
+    below = zs < zs[i_nose] - 0.012 * hs
     zb, pb = zs[below], prof[below]
     # lips = the two most anterior local maxima (min y) in the band 1-5 cm under the nose
-    band = (zb > zs[i_nose] - 0.055)
+    band = (zb > zs[i_nose] - 0.055 * hs)
     zl, pl = zb[band], pb[band]
     order = np.argsort(pl)
     up_i = order[0]
-    lo_i = next(i for i in order[1:] if abs(zl[i] - zl[up_i]) > 0.008)
+    lo_i = next(i for i in order[1:] if abs(zl[i] - zl[up_i]) > 0.008 * hs)
     a, b = sorted((up_i, lo_i), key=lambda i: zl[i])
     seg = slice(min(a, b), max(a, b) + 1)
     k = int(np.argmax(pl[seg])) + min(a, b)
@@ -114,17 +117,19 @@ def from_reference(ref, J):
     # chin: the front of the jaw 2-10 cm under the mouth (bounded below and
     # behind — unbounded, "the lowest midline point in front" is the groin)
     st = L["stomion"]
-    chin_band = mid[(mid[:, 2] < st[2] - 0.02) & (mid[:, 2] > st[2] - 0.10) & (mid[:, 1] < st[1] + 0.05)]
+    chin_band = mid[(mid[:, 2] < st[2] - 0.02 * hs) & (mid[:, 2] > st[2] - 0.10 * hs)
+                    & (mid[:, 1] < st[1] + 0.05 * hs)]
     L["chin"] = chin_band[np.argmin(chin_band[:, 2])]
     L["pogonion"] = chin_band[np.argmin(chin_band[:, 1])]
     drop = float(st[2] - L["chin"][2])
-    assert 0.03 < drop < 0.095, f"chin {drop * 100:.1f} cm under the stomion: landmark search failed"
+    assert 0.025 * hs < drop < 0.095 * hs, f"chin {drop * 100:.1f} cm under the stomion: landmark search failed"
     # ears: lateral-most head point near eye height, behind the eyes
-    head = P[(P[:, 2] > eye[2] - 0.05) & (P[:, 2] < eye[2] + 0.02) & (P[:, 1] > eye[1] + 0.04) & (P[:, 0] > 0)]
+    head = P[(P[:, 2] > eye[2] - 0.05 * hs) & (P[:, 2] < eye[2] + 0.02 * hs) & (P[:, 1] > eye[1] + 0.04 * hs)
+             & (P[:, 0] > 0)]
     e = head[np.argmax(head[:, 0])]
     L["ear_l"] = e
     # head center: middle of the skull between the ears, at brow height
-    skull = P[(P[:, 2] > eye[2]) & (np.abs(P[:, 0]) < 0.12)]
+    skull = P[(P[:, 2] > eye[2]) & (np.abs(P[:, 0]) < 0.12 * hs)]
     yc = 0.5 * (skull[:, 1].min() + skull[:, 1].max())
     L["head_c"] = _v(0, yc, eye[2] + 0.005)
     L["chin_z"] = float(L["chin"][2])
