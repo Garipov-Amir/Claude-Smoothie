@@ -190,16 +190,70 @@ def modifier_index(cache):
     return {k: sorted(v) for k, v in idx.items()}
 
 
+CUSTOM_MODIFIERS = {"nipple-flatten"}      # ours, not MakeHuman targets (see flatten_nipples)
+
+
 def modifier_targets(body, cache):
     idx = modifier_index(cache)
     out = []
     for key, v in (body.get("modifiers") or {}).items():
+        if key in CUSTOM_MODIFIERS:
+            continue
         if key not in idx:
             import difflib
             near = difflib.get_close_matches(key, list(idx), n=5)
             raise ValueError(f"unknown MakeHuman modifier {key!r}; close: {near}")
         out += [(rel, float(v)) for rel in idx[key]]
     return out
+
+
+def flatten_nipples(V, faces, cache, w=1.0):
+    """Nipples and areolae replaced by the smoothest continuation of the
+    breast around them (heights along the local normal filled biharmonically
+    from the surrounding skin), in MakeHuman space. Fitted garments are
+    shells over the skin and must not show them; MakeHuman's own
+    nipple-*-decr targets leave a bump on a full breast and dent a small male
+    nipple into a dimple (whose wrap rays then cross), and a quadratic fitted
+    to the skin around a full breast flattened its apex into a plateau."""
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+    i_set = np.union1d(load_target(_get(cache, "targets/breast/nipple-size-decr.target"))[0],
+                       load_target(_get(cache, "targets/breast/nipple-point-decr.target"))[0])
+    # cotangent Laplacian + lumped mass on the triangulated body (a uniform
+    # Laplacian overshot the fill on the dense mesh around the nipple)
+    T = np.array([(f[0], f[k], f[k + 1]) for f in faces for k in range(1, len(f) - 1)])
+    n_v = len(V)
+    rows, cols, vals = [], [], []
+    mass = np.zeros(n_v)
+    for k in range(3):
+        i, j, o = T[:, k], T[:, (k + 1) % 3], T[:, (k + 2) % 3]
+        a, b = V[i] - V[o], V[j] - V[o]
+        cr = np.linalg.norm(np.cross(a, b), axis=1)
+        cot = np.einsum("ij,ij->i", a, b) / np.maximum(cr, 1e-12)
+        rows += [i, j]
+        cols += [j, i]
+        vals += [0.5 * cot, 0.5 * cot]
+        np.add.at(mass, T[:, k], cr / 6.0)
+    W = sparse.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
+                          shape=(n_v, n_v)).tocsr()
+    deg = np.asarray(W.sum(axis=1)).ravel()
+    L = (sparse.diags(deg) - W).tocsr()
+    B = (L @ sparse.diags(1.0 / np.maximum(mass, 1e-12)) @ L).tocsr()
+    for side in (1.0, -1.0):
+        idx = i_set[V[i_set, 0] * side > 0]
+        if len(idx) < 4:
+            continue
+        c = V[idx].mean(axis=0)
+        r_out = float(np.linalg.norm(V[idx] - c, axis=1).max())
+        d = np.linalg.norm(V - c, axis=1)
+        near = np.nonzero((mass > 0) & (d < 2.5 * r_out))[0]
+        _u, _s, vt = np.linalg.svd(V[near] - V[near].mean(axis=0))
+        n = vt[2] if vt[2][2] > 0 else -vt[2]          # MakeHuman: +Z is forward
+        h = (V - c) @ n
+        known = np.setdiff1d(near, idx)
+        h_new = spsolve(B[idx][:, idx].tocsc(), -(B[idx][:, known] @ h[known]))
+        V[idx] += (w * (h_new - h[idx]))[:, None] * n
+    return V
 
 
 def _fetch_all(cache, rels):
@@ -233,6 +287,9 @@ def build(cache, body=None, full=False):
             i, d = load_target(path)
             if len(i):
                 V[i] += w * d
+        wf = float((body.get("modifiers") or {}).get("nipple-flatten", 0.0))
+        if wf > 0:
+            V = flatten_nipples(V, G["body"], cache, wf)
         _BUILT[key] = (V, G)
     V, G = _BUILT[key]
     F = G["body"]

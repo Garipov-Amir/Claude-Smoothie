@@ -180,11 +180,12 @@ def resolve(user=None):
     if "boots" in types and "shoes" in types:
         raise SpecError("outfit: boots and shoes both listed")
     # garments are fitted shells over the skin: under a top, flatten the
-    # nipples (as game characters are built) unless the spec sets these itself
+    # nipples (as game characters are built) unless the spec sets it itself
     if {"shirt", "vest"} & set(types):
         b["modifiers"] = dict(b["modifiers"])
-        for k in ("nipple-point-decr", "nipple-size-decr"):
-            b["modifiers"].setdefault(k, 1.0)
+        b["modifiers"].setdefault("nipple-flatten", 1.0)
+    if not 0.0 <= float(b["modifiers"].get("nipple-flatten", 0.0)) <= 1.0:
+        raise SpecError("body.modifiers['nipple-flatten']: expected 0..1")
     # colors that default to another one
     if S["beard"]["color"] is None:
         S["beard"]["color"] = S["hair"]["color"]
