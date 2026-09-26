@@ -913,27 +913,6 @@ def relabel_from_cage(obj, C):
     bm.free()
 
 
-def pouch_cage(name="SK_Character_Pouch"):
-    """Low-poly for the belt pouch: a subdivided box around its sculpted
-    frame (flap and strap loop are normal-map detail)."""
-    import costume
-    c, R, half = costume.GEAR["pouch_frame"]
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=2.0)
-    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True)
-    M = np.asarray(R, dtype=np.float64)
-    for v in bm.verts:
-        p = np.array(v.co) * (np.asarray(half) * 0.98)
-        v.co = Vector(M @ p + np.asarray(c, dtype=np.float64))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    o = bpy.data.objects.new(name, me)
-    bpy.context.scene.collection.objects.link(o)
-    return o
-
-
 def project_nearest(obj, surf, iters=3, relax=0.4):
     """Plain snap + relax (for hard-surface pieces: nearest point is right)."""
     bm = bmesh.new()
@@ -957,15 +936,18 @@ def project_nearest(obj, surf, iters=3, relax=0.4):
     bm.free()
 
 
-def build_lods(J, hp_obj, name="SK_Character", iters=(6, 4), hp_pouch=None):
+def build_lods(J, hp_obj, name="SK_Character", iters=(6, 4), hp_pieces=None, log=print):
     """Cage -> UVs -> subdivision LODs.
 
-    Returns (lod4_cage, lod2, lod0): the cage itself is the lowest clean LOD,
+    Returns (C, lod4_cage, lod2, lod0): the cage itself is the lowest clean LOD,
     one Catmull-Clark level (re-projected + relaxed) is LOD2, two levels is
     LOD0. All three share the cage's UV layout (subdivision interpolates UVs),
     so one texture set / one bake serves every LOD; LOD1 and LOD3 are
-    decimated in-betweens made by the LOD stage.
+    decimated in-betweens made by the LOD stage. Separate pieces get their
+    LODs from piece_lowpoly and share the atlas.
     """
+    import pieces as PC
+    import piece_lowpoly
     import uvs
     surf = Surface(hp_obj)
     C, G = build_cage(J, surf)
@@ -978,24 +960,17 @@ def build_lods(J, hp_obj, name="SK_Character", iters=(6, 4), hp_pouch=None):
     cage = bpy.data.objects.new(f"{name}_LOD4", me)
     bpy.context.scene.collection.objects.link(cage)
     seat_eye_holes(cage)
-    pouches = []
-    if hp_pouch is not None:
-        pc = pouch_cage(f"{name}_Pouch_LOD4")
-        psurf = Surface(hp_pouch)
-        project_nearest(pc, psurf, iters=1)
-        pouches.append(pc)
-    uvs.unwrap(cage, extras=pouches)
-    if pouches:
-        prev = pouches[0]
-        for level in ("LOD2", "LOD0"):
-            o = prev.copy()
-            o.data = prev.data.copy()
-            o.name = o.data.name = f"{name}_Pouch_{level}"
-            bpy.context.scene.collection.objects.link(o)
-            subdivide(o, 1)
-            project_nearest(o, psurf, iters=3)
-            pouches.append(o)
-            prev = o
+    states, extras = [], []
+    for p in PC.PIECES:
+        hp = (hp_pieces or {}).get(p["name"])
+        if hp is None:
+            continue
+        o, st = piece_lowpoly.prepare(p, hp, name, log=log)
+        states.append((p, hp, st))
+        extras.append(o)
+    uvs.unwrap(cage, extras=extras)
+    for p, hp, st in states:
+        piece_lowpoly.finish(p, hp, name, st)
 
     lods = [cage]
     prev = cage

@@ -41,12 +41,12 @@ from landmarks import LM
 # Template
 # ---------------------------------------------------------------------------
 
-def template_object(name, cache):
-    """The base mesh as a Blender object with its UVs, UV seams marked where
-    the template's UVs are discontinuous, and per-vertex 'island' ids."""
+def template_object(name, cache, body=None):
+    """The base mesh (shaped by the spec's body) as a Blender object with its
+    UVs and UV seams marked where the template's UVs are discontinuous."""
     import os
     import reference_body as RB
-    ref = RB.build(cache)
+    ref = RB.build(cache, body)
     V, F = ref
     VT, FT = RB.load_body_uv(os.path.join(cache, "base.obj"))
     used = np.unique(np.concatenate([np.array(f) for f in F]))
@@ -381,12 +381,14 @@ def max_offsets(P):
     the same region masks that sculpted the costume: bare skin ~0 (a longer
     ray went through a lip or an eyelid), garments up to ~2.5 cm, hair ~4 cm."""
     import costume
-    if not costume.GEAR:                 # no costume on this model
+    if not costume.REGIONS:              # nothing sculpted on this body
         return np.full(len(P), 0.004)
     rid = costume.region_id(np.asarray(P, np.float32), LM["J"])
+    kinds = np.array([costume.region_kind(r) for r in range(len(costume.region_names()))])
+    k = kinds[rid]
     dm = np.full(len(P), 0.028)
-    dm[rid == costume.SKIN] = 0.004
-    dm[rid == costume.HAIR] = 0.045
+    dm[k == "skin"] = 0.004
+    dm[k == "hair"] = 0.045 * LM.get("s_head", 1.0)
     return dm
 
 
@@ -532,9 +534,10 @@ def wrap(obj, hp, log=print, repair_rounds=0):
     import costume
     keep = dilate(inner, nb, rings=2)
     w = np.clip((d - 0.003) / 0.004, 0.0, 1.0)
-    if costume.GEAR:
+    if costume.REGIONS:
         rid = costume.region_id(np.asarray(P, np.float32), LM["J"])
-        w[np.isin(rid, (costume.BOOTS, costume.SOLE))] = 1.0    # toes inside the boots
+        kinds = np.array([costume.region_kind(r) for r in range(len(costume.region_names()))])
+        w[np.isin(kinds[rid], ("footwear", "sole"))] = 1.0      # toes inside the boots
     w = np.maximum(w, dilate(w > 0.5, nb, rings=3).astype(np.float64))
     w[keep] = 0.0
     Ps = taubin(P, nb, w, iterations=60)
@@ -643,38 +646,34 @@ def part_labels(obj, J):
 # LOD chain from the wrapped base mesh
 # ---------------------------------------------------------------------------
 
-def build_lods(J, hp_obj, cache, name="SK_Character", hp_pouch=None, log=print):
+def build_lods(J, hp_obj, cache, name="SK_Character", hp_pieces=None, log=print):
     """Wrapped template = LOD0 (quads, template UV seams, own ABF unwrap and
-    atlas packing together with the gear); LOD2 / LOD4 are collapse-decimated
-    from it (UVs carried along). Returns (None, lod4, lod2, lod0) like
-    retopo.build_lods."""
-    import lods
-    import retopo
-    import uvs
+    atlas packing together with the separate pieces); LOD2 / LOD4 are
+    collapse-decimated from it (UVs carried along). Pieces get their LODs
+    from piece_lowpoly. Returns (None, lod4, lod2, lod0)."""
     import costume
-    lod0 = template_object(f"{name}_LOD0", cache)
-    if "boots" in costume.GEAR:
+    import lods
+    import pieces as PC
+    import piece_lowpoly
+    import spec as SP
+    import uvs
+    lod0 = template_object(f"{name}_LOD0", cache, SP.SPEC.get("body") if SP.SPEC else None)
+    if "footwear" in costume.GEAR:          # boots and shoes both hide the toes
         boot_feet(lod0, J, log=log)
     wrap(lod0, hp_obj, log=log)
     part_labels(lod0, J)
-    pouches = []
-    if hp_pouch is not None:
-        pc = retopo.pouch_cage(f"{name}_Pouch_LOD4")
-        psurf = retopo.Surface(hp_pouch)
-        retopo.project_nearest(pc, psurf, iters=1)
-        pouches.append(pc)
-    uvs.unwrap(lod0, extras=pouches)
-    if pouches:
-        prev = pouches[0]
-        for level in ("LOD2", "LOD0"):
-            o = prev.copy()
-            o.data = prev.data.copy()
-            o.name = o.data.name = f"{name}_Pouch_{level}"
-            bpy.context.scene.collection.objects.link(o)
-            retopo.subdivide(o, 1)
-            retopo.project_nearest(o, psurf, iters=3)
-            pouches.append(o)
-            prev = o
+    states, extras = [], []
+    for p in PC.PIECES:
+        hp = (hp_pieces or {}).get(p["name"])
+        if hp is None:
+            continue
+        o, st = piece_lowpoly.prepare(p, hp, name, log=log)
+        states.append((p, hp, st))
+        extras.append(o)
+    uvs.unwrap(lod0, extras=extras)
+    for p, hp, st in states:
+        out = piece_lowpoly.finish(p, hp, name, st)
+        log(f"piece {p['name']}: " + ", ".join(f"{k}={len(o.data.polygons)} faces" for k, o in sorted(out.items())))
     lod2 = lods.decimated(lod0, f"{name}_LOD2", 0.25)
     lod4 = lods.decimated(lod0, f"{name}_LOD4", 0.0625)
     for o in (lod0, lod2, lod4):

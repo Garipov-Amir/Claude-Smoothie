@@ -125,13 +125,13 @@ def export_glb(path, objs, arm, tex_dir, web_res=2048):
 def main(out_dir):
     t = time.time()
     bpy.ops.wm.open_mainfile(filepath=os.path.join(out_dir, "rigged.blend"))
-    humanoid.build(clothing=False)   # landmarks: LOD protection (face, hands), low-LOD eyes
+    import spec as SP
+    humanoid.build(SP.from_out(out_dir), clothing=False)   # landmarks: LOD protection (face, hands), low-LOD eyes
     arm = bpy.data.objects[f"{NAME}_Skeleton"]
     rig.clear_pose(arm)
     bpy.context.scene.frame_set(1)
-    for nm in ("HighPoly", "HighPoly_Pouch", f"{NAME}_LOD0_quads"):
-        o = bpy.data.objects.get(nm)
-        if o:
+    for o in bpy.data.objects:
+        if o.name.startswith("HighPoly") or o.name == f"{NAME}_LOD0_quads":
             o.hide_render = True
     topo = {}
     for nm in (f"{NAME}_LOD0_quads", f"{NAME}_LOD2", f"{NAME}_LOD4"):

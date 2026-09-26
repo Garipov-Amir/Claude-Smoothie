@@ -27,9 +27,15 @@ def main(out_dir, res=2048):
     log = lambda s: print(f"[{time.time() - t:6.1f}s] {s}", flush=True)
     # (high-poly, low-poly) per mesh piece: each piece bakes only from its
     # own high-poly, then the bakes are merged in the shared UV atlas
-    pairs = [("HighPoly", "SK_Character_LOD0"), ("HighPoly_Pouch", "SK_Character_Pouch_LOD0")]
-    pairs = [(bpy.data.objects[h], bpy.data.objects[l]) for h, l in pairs
-             if h in bpy.data.objects and l in bpy.data.objects]
+    import humanoid
+    import pieces
+    import spec as SP
+    humanoid.build(SP.from_out(out_dir))     # piece order = part index the texture stage expects
+    pairs = [("HighPoly", "SK_Character_LOD0")] + [(f"HighPoly_{p['name']}", f"SK_Character_{p['name']}_LOD0")
+                                                    for p in pieces.PIECES]
+    missing = [h for h, l in pairs if h not in bpy.data.objects or l not in bpy.data.objects]
+    assert not missing, f"missing high/low-poly pieces {missing}: rerun the lowpoly stage"
+    pairs = [(bpy.data.objects[h], bpy.data.objects[l]) for h, l in pairs]
     his = [h for h, _ in pairs]
     for _h, low in pairs:
         # keep the quad source, bake and ship the triangulated game mesh

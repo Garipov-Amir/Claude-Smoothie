@@ -257,3 +257,14 @@ def body_key(S):
     """Stable hash of everything that shapes the body mesh (cache key)."""
     import hashlib
     return hashlib.sha1(json.dumps(S["body"], sort_keys=True).encode()).hexdigest()[:12]
+
+
+def shape_key(S):
+    """Everything that changes geometry (colors and materials stripped): two
+    specs with the same key share sculpt, topology, UVs and bakes."""
+    import hashlib
+    drop = ("color", "sole", "material", "metal", "lips", "iris", "freckles", "stubble", "roughness")
+    strip = lambda d: {k: v for k, v in d.items() if k not in drop}
+    key = {"body": S["body"], "hair": strip(S["hair"]), "beard": strip(S["beard"]),
+           "outfit": [strip(g) for g in S["outfit"]], "pieces": [strip(p) for p in S["pieces"]]}
+    return hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:12]

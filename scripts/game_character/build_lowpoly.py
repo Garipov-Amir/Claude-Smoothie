@@ -23,31 +23,30 @@ def load_highpoly(out_dir):
 
 def main(out_dir, render=True):
     t = time.time()
+    log = lambda s: print(f"[{time.time() - t:.1f}s] {s}", flush=True)
     U.reset_scene()
-    _m, J = humanoid.build()          # landmarks + gear placement for retopo
+    import spec as SP
+    import pieces
+    import piece_lowpoly
+    S = SP.from_out(out_dir)
+    _m, J = humanoid.build(S)          # landmarks, garment regions, pieces
     hp = load_highpoly(out_dir)
-    hp_pouch = None
-    pp = os.path.join(out_dir, "highpoly_pouch.npz")
-    if os.path.exists(pp):
-        d = np.load(pp)
-        hp_pouch = U.mesh_from_arrays("HighPoly_Pouch", d["verts"], d["faces"])
-        hp_pouch.data.shade_smooth()
-    print(f"[{time.time() - t:.1f}s] highpoly loaded", flush=True)
+    hp_pieces = piece_lowpoly.load_highpolys(out_dir, [p["name"] for p in pieces.PIECES])
+    log("highpoly loaded")
     from landmarks import LM
     if LM.get("body") == "reference":
         # the sculpt sits on the reference's limit surface: wrap its base topology
         import wrap
-        C, lod4, lod2, lod0 = wrap.build_lods(J, hp, humanoid.REF_CACHE, hp_pouch=hp_pouch,
-                                              log=lambda s: print(f"[{time.time() - t:.1f}s] {s}", flush=True))
+        C, lod4, lod2, lod0 = wrap.build_lods(J, hp, humanoid.REF_CACHE, hp_pieces=hp_pieces, log=log)
     else:
-        C, lod4, lod2, lod0 = retopo.build_lods(J, hp, hp_pouch=hp_pouch)
+        C, lod4, lod2, lod0 = retopo.build_lods(J, hp, hp_pieces=hp_pieces, log=log)
     for o in (lod4, lod2, lod0):
-        print(f"[{time.time() - t:.1f}s] {o.name}: {len(o.data.polygons)} faces, {U.tri_count(o)} tris", flush=True)
+        log(f"{o.name}: {len(o.data.polygons)} faces, {U.tri_count(o)} tris")
     import uvs
     print("uv stats", uvs.uv_stats(lod0))
     hp.hide_render = True
-    if hp_pouch is not None:
-        hp_pouch.hide_render = True
+    for o in hp_pieces.values():
+        o.hide_render = True
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, "lowpoly.blend"))
     return lod4, lod2, lod0, hp
 

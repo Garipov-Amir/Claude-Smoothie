@@ -39,7 +39,8 @@ def main(build, out, samples=64):
     os.makedirs(out, exist_ok=True)
     tmp = os.path.join(out, "_tmp")
     os.makedirs(tmp, exist_ok=True)
-    _m, J = humanoid.build(clothing=False)
+    import spec as SP
+    _m, J = humanoid.build(SP.from_out(build), clothing=False)
     from landmarks import LM
     head = (0.0, float(LM["eye_l"][1]) + 0.07, float(LM["eye_l"][2]) - 0.005)   # between the eyes, mid-skull
 
@@ -49,10 +50,10 @@ def main(build, out, samples=64):
     U.reset_scene()
     hp = U.mesh_from_arrays("HighPoly", d["verts"], d["faces"])
     hps = [hp]
-    pp = os.path.join(build, "highpoly_pouch.npz")
-    if os.path.exists(pp):
+    import glob
+    for pp in sorted(glob.glob(os.path.join(build, "highpoly_*.npz"))):
         dp = _np.load(pp)
-        hps.append(U.mesh_from_arrays("HighPoly_Pouch", dp["verts"], dp["faces"]))
+        hps.append(U.mesh_from_arrays("HighPoly_" + os.path.basename(pp)[9:-4], dp["verts"], dp["faces"]))
     clay = U.clay_material(color=(0.55, 0.53, 0.50))
     for o in hps:
         o.data.shade_smooth()
