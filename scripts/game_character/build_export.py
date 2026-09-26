@@ -136,7 +136,7 @@ def main(out_dir):
     topo = {}
     for nm in (f"{NAME}_LOD0_quads", f"{NAME}_LOD2", f"{NAME}_LOD4"):
         o = bpy.data.objects.get(nm)
-        if o and any(len(p.vertices) == 4 for p in o.data.polygons):
+        if o and sum(len(p.vertices) == 4 for p in o.data.polygons) > 0.5 * len(o.data.polygons):
             topo[nm] = lods.topology_report(o)
     chain, eye_sets = build_chain(arm)
     print(f"[{time.time() - t:.1f}s] LOD chain: " + ", ".join(f"{o.name}={U.tri_count(o)}" for o in chain), flush=True)

@@ -144,6 +144,11 @@ def candidate_bones(label):
 # junction bones that should only win when clearly closer (no visibility test)
 BONE_BIAS = {"upperarm_l": 1.6, "upperarm_r": 1.6, "thigh_l": 1.25, "thigh_r": 1.25}
 
+# bones whose mass is wider than their segment: the pelvis also spans the two
+# hip sockets, otherwise the hip sides above the joint go to the thighs and
+# the waist bends with every leg swing
+EXTRA_SEGMENTS = {"pelvis": [("thigh_l", "thigh_r")]}
+
 
 def seg_dist(P, a, b):
     ab = b - a
@@ -199,7 +204,10 @@ def heat_weights(mesh_obj, arm_obj, heat_c=1.0):
         sel = np.nonzero(labels == lab)[0]
         for nm in candidate_bones(int(lab)):
             h, t = bones[nm]
-            D[sel, col[nm]] = seg_dist(V[sel], h, t) * BONE_BIAS.get(nm, 1.0)
+            d = seg_dist(V[sel], h, t)
+            for a, b in EXTRA_SEGMENTS.get(nm, ()):
+                d = np.minimum(d, seg_dist(V[sel], bones[a][0], bones[b][0]))
+            D[sel, col[nm]] = d * BONE_BIAS.get(nm, 1.0)
     dmin = D.min(axis=1)
     nearest = D <= dmin[:, None] * 1.0001
     Hd = heat_c / np.maximum(dmin, 0.004) ** 2
@@ -342,15 +350,19 @@ def bind_rigid(obj, arm_obj, bone):
     obj.parent = arm_obj
 
 
-def bind_gear(obj, body, arm_obj, k=12, max_influences=4):
+def bind_gear(obj, body, arm_obj, k=12, max_influences=4, anchor_frac=0.2):
     """Hard gear strapped to the body (pouch): one weight set for the whole
-    piece — the average of the skin weights under it — so it rides the hip
-    rigidly instead of bending with every skin vertex it touches."""
+    piece — the average of the skin weights where it hangs from (its top
+    `anchor_frac`, the belt loop) — so it rides the belt rigidly instead of
+    bending with every skin vertex it touches or swinging with the thigh
+    its bottom rests on."""
     from scipy.spatial import cKDTree
     bw = body.matrix_world
     bco = np.array([(bw @ v.co)[:] for v in body.data.vertices])
     gco = np.array([(obj.matrix_world @ v.co)[:] for v in obj.data.vertices])
-    _d, near = cKDTree(bco).query(gco, k=k)
+    z0, z1 = gco[:, 2].min(), gco[:, 2].max()
+    top = gco[gco[:, 2] >= z1 - anchor_frac * (z1 - z0)]
+    _d, near = cKDTree(bco).query(top, k=k)
     acc = {}
     names = {g.index: g.name for g in body.vertex_groups}
     for i in np.unique(near.reshape(-1)):
