@@ -1,16 +1,29 @@
 # Game-ready character pipeline (Workflow C)
 
-`scripts/game_character/` — a complete, code-only production pipeline for a
-realistic humanoid game character: sculpt → retopology → UVs → bake →
+`scripts/game_character/` — a complete, code-only production pipeline for
+realistic humanoid game characters: sculpt → retopology → UVs → bake →
 PBR textures → skeleton + skin + animation → LOD chain → FBX/GLB export →
 validation report. Every stage is a plain Python module driving Blender
 (`bpy`), so it runs headless, on CI, or in a cloud container.
 
+**The character is data.** A JSON *spec* (`spec.py`, presets in
+`presets/*.json`) sets the body (MakeHuman sex/age/muscle/weight/height,
+ethnicity, any of ~250 named morph modifiers), skin/eye/hair colors, hair and
+beard style, an outfit of garment layers from a library (shirt, trousers,
+vest, belt, boots/shoes, gloves, bracers — each with shape options and a
+material), and separate pieces (ponytail, bun, long beard, horns, tusks,
+pauldrons, pouch). Every stage reads the same spec, so one code path builds a
+ranger, a scout, a dwarf, an orc or a demon. The agent-facing workflow
+(request → spec → preview → build → review) is the
+[`humanoid-character` skill](../skills/humanoid-character/SKILL.md).
+
 ```bash
-# one command, all stages (≈12 min at 2K textures on 4 CPU cores, 7 of them the sculpt)
-python scripts/game_character/build_character.py <out_dir> --res 2048
-# re-run from any stage after an edit
-python scripts/game_character/build_character.py <out_dir> --from bake --res 4096
+# one command, all stages (≈15 min at 2K textures on 4 CPU cores, 7 of them the sculpt)
+python scripts/game_character/build_character.py <out_dir> --spec orc_warrior --res 2048
+# 1–2 min clay preview of a spec before committing to a build
+python scripts/game_character/preview_spec.py my_character.json preview.png
+# re-run from any stage after an edit (the driver refuses a shape change after highpoly)
+python scripts/game_character/build_character.py <out_dir> --from textures --res 4096
 # check the shipped files stand on their own
 python scripts/game_character/verify_export.py <out_dir>/export/SK_Character.glb
 ```
@@ -25,8 +38,9 @@ the CPU**.
 
 | Stage | Module(s) | Output | Senior checklist it satisfies |
 |---|---|---|---|
-| highpoly | `sdf.py`, `humanoid.py`, `costume.py`, `build_highpoly.py` | `highpoly.npz` (~4.3 M tris) | forms → planes → details; cloth with thickness and hems; ~1 mm detail |
-| lowpoly | `wrap.py` (reference body) or `retopo.py` (procedural), `uvs.py`, `build_lowpoly.py` | `lowpoly.blend` (LOD0/LOD2/LOD4 + gear pieces, UVs) | quads with animation loops, closed, no self-intersections, seams hidden, texel density |
+| spec | `spec.py`, `presets/*.json`, `preview_spec.py`, `list_modifiers.py` | `spec.json` | the brief as data: validated, stored with the build |
+| highpoly | `reference_body.py`, `landmarks.py`, `sdf.py`, `humanoid.py`, `costume.py`, `pieces.py`, `build_highpoly.py` | `highpoly.npz` (~4 M tris) + `highpoly_<piece>.npz` | forms → planes → details; cloth with thickness and hems; ~1 mm detail |
+| lowpoly | `wrap.py` (reference body) or `retopo.py` (procedural), `piece_lowpoly.py`, `uvs.py`, `build_lowpoly.py` | `lowpoly.blend` (LOD0/LOD2/LOD4 + pieces, UVs) | quads with animation loops, closed, no self-intersections, seams hidden, texel density |
 | bake | `bake.py`, `build_bake.py` | `bakes_<res>.npz` | synced tangents, cage/ray distance, dilation, bake cleanup |
 | textures | `texture.py`, `build_textures.py` | `textures/*.png` | PBR ranges, ID-driven smart materials, detail normals, ORM packing |
 | lookdev | `lookdev.py`, `eyes.py`, `build_lookdev.py` | `lookdev.blend` | engine-style material (textures only), separate eyes |
@@ -42,17 +56,27 @@ A code-only stand-in for ZBrush. The model is an ordered list of operations
 that can be evaluated on any grid.
 
 - **Anatomical base (default)**: the body is the limit surface of the
-  MakeHuman base mesh (CC0) with its young-male and muscle targets, scaled to
-  1.80 m, turned into a signed distance field (`reference_body.MeshSDF`: dense
-  subdivision samples + normals, point-to-plane near the surface, a coarse
-  inside/outside grid filled by connectivity for far points). Garments, hair
-  and gear are sculpted on top of it. Anatomy is then correct by construction
-  (skull, face, hands, feet, muscle masses, proportions), which primitive
-  sculpting never reached. The skeleton and finger chains come from the
-  reference's joint helpers; `landmarks.py` measures eyes, nose tip, lips,
-  chin, ears, neck and crotch on the surface, and every later stage (garment
-  necklines, hairline, texture color zones, eye bones, LOD protection) keys
-  off those landmarks instead of hard-coded coordinates.
+  MakeHuman base mesh (CC0) turned into a signed distance field
+  (`reference_body.MeshSDF`: dense subdivision samples + normals,
+  point-to-plane near the surface, a coarse inside/outside grid filled by
+  connectivity for far points). Its shape is blended **exactly like
+  MakeHuman's macro sliders** (`reference_body.macro_targets`): the
+  `universal-<sex>-<age>-<muscle>-<weight>` targets with bilinear weights
+  over sex × age (baby 1 / child 11 / young 25 / old 90 years) × muscle ×
+  weight, `<ethnicity>-<sex>-<age>` targets for the face/body blend, the
+  `proportions` targets, then any named **modifier** (`ear-shape-pointed`,
+  `upperlegs-height-decr`, … one side-less stem drives both sides), then a
+  uniform scale to `height_m`. Targets are fetched on demand from
+  MakeHuman's repository and cached (a new body needs ~20–60 small files).
+  Anatomy is correct by construction (skull, face, hands, feet, muscle
+  masses, age proportions), which primitive sculpting never reached. The
+  skeleton and finger chains come from the reference's joint helpers;
+  `landmarks.py` measures eyes, nose tip, lips, chin, ears, neck, crotch and
+  **limb radii** (upper arm, forearm, thigh, calf, a radius-vs-height leg
+  profile) on the surface, and every later stage (garment edges and fold
+  sizes, hairline, piece placement, texture color zones, eye bones, LOD
+  protection) keys off those landmarks instead of hard-coded coordinates —
+  that is what lets one costume library fit a 1.10 m goblin and a 1.96 m orc.
 - **Procedural body** (`body="procedural"`) is the primitive sculpt below,
   tuned to 33 ANSUR-II anthropometric targets (`anthropometry.py`).
 - **Primitives**: oriented ellipsoids (muscle masses, fat pads), round cones
@@ -90,6 +114,40 @@ that can be evaluated on any grid.
   brick, welded. A whole clothed character at 1.2 mm ≈ 4.3 M triangles in
   ~2 min / < 2 GB instead of a 20+ GB dense grid.
 
+### 1b. The costume library (`costume.py`) and pieces (`pieces.py`)
+
+- **A garment is a mask + an edit + a material.** Each garment type is a
+  function of the body's landmarks and the spec options: the shirt mask is a
+  torso region from the neck base down to below the belt line (below the
+  hip joints for an untucked shirt), sleeve ends at a fraction of the arm
+  length (`arm_param`: long = at the wrist, short = 30 % down the upper arm,
+  none = at the shoulder), the neckline crew/V/scoop; trousers end at the ankle, below the knee
+  or mid thigh; boots at ankle/calf/knee height from the leg profile. Sizes
+  (ease, fold amplitude and wavelength, cuff and sole thickness) scale with
+  the limb radii and stature, so the same code fits any body.
+- **Layering is fixed**, like dressing a real person: shirt → trousers →
+  vest → bracers → gloves → belt → footwear, an untucked shirt moved above the
+  trousers. Each layer offsets the model built so far, so a vest over a
+  shirt stands off the shirt, not the skin.
+- **A region registry** (`register(name, kind, material, mask)`) records every
+  layer in build order; `region_id(P)` evaluates them on any point set (the
+  texture stage calls it per texel), last layer wins. Kinds (`cloth`, `hair`,
+  `footwear`, `sole`, `metal`, `piece`) drive the wrap allowances and the
+  booted template; materials (`linen`, `cloth`, `wool`, `leather`, `metal`,
+  `fur` + color) pick the texture recipe.
+- **Hair styles** are thickness profiles over the hairline curve (buzz,
+  short, mohawk = a midline strip; receding/straight/rounded hairlines);
+  bald skips the layer. A short beard is a sculpted shell on the jaw with a
+  feathered top edge; stubble is texture only.
+- **Pieces are separate SDF models** (`pieces.py`), not edits of the body:
+  ponytail and bun (tubes seated on the back of the head with a clearance
+  from the neck), long beard (tapered tube from the chin, held clear of the
+  chest), horns (swept tubes: curved, straight, ram spiral), tusks, pauldrons
+  (a spherical cap + rolled rim + rivets, axis perpendicular to the upper arm
+  and tilted up), pouch. Each piece records its bounds, bind target
+  (a bone, or averaged skin weights under it), material and how its game mesh
+  is made (see 2c); each is polygonized into its own `highpoly_<name>.npz`.
+
 ## 2. Retopology
 
 Two routes, picked by the body the sculpt was built on.
@@ -114,11 +172,14 @@ surface, so every template vertex has an exact anchor:
    limit normal; the first exit through the high-poly is the outer surface of
    whatever was sculpted on top. A hit counts only if it faces the same way
    and lies within the **material's allowance**, read from the same region
-   masks that sculpted the costume: bare skin 4 mm, garments 28 mm, hair
-   45 mm. (Without the allowance, rays from the lip line went through the lip
-   and landed 26 mm away.)
+   registry that sculpted the costume: garments/footwear/pieces' contact
+   28 mm, hair 45 mm × head scale, and **bare skin casts no ray at all** —
+   the sculpt there *is* the template's own limit surface, so its offset is
+   exactly 0. (With a 4 mm skin allowance, rays from a closed lip line went
+   through the other lip; on a heavy-jawed orc that crossed 180 face pairs.)
 3. **Interior islands** (eye sockets, mouth bag — the small UV islands inside
-   the head) stay on the body, behind eyeballs and lips.
+   the head) and a 2-ring band around them (lids, lips) stay on the body,
+   behind eyeballs and lips.
 4. **Covered detail is re-cast from a smoothed base**: where a garment stands
    off the body (trousers bridging the gluteal cleft) rays from the detail fan
    out and land out of order; there the template is Taubin-smoothed first and
@@ -137,11 +198,39 @@ a "shoe" variant of the base mesh for this, and so does `boot_feet`: each
 foot is cut at the closed metatarsal-head edge loop (32 edges, the most
 distal ≥ 24-edge loop behind the ball joint) and capped with a domed quad
 grid built as a Coons patch of that ring (10 × 6, mirror-exact on both feet).
-The wrap then stretches that toe box over the sculpted boot.
+The wrap then stretches that toe box over the sculpted boot. The variant is
+picked by the spec: any footwear layer → booted, barefoot → toes kept.
 
-Result (this character): LOD0 = 11 888 verts / 23 772 tris, closed, 0
-non-manifold, 0 degenerate, **0 self-intersecting face pairs**; the stage
-takes ~17 s.
+Result: LOD0 ≈ 11.9 k verts / 23.8 k body tris, closed, 0 non-manifold, 0
+degenerate, **0 self-intersecting face pairs** on every preset (see the
+gallery in `examples/game_character/`); the stage takes ~20–60 s including
+the pieces.
+
+### 2c. Pieces: three low-poly recipes (`piece_lowpoly.py`)
+
+Separate pieces have no template, so each declares how its game mesh is made:
+
+- **`box`** (pouch): an 8-vertex cage from the piece's own frame,
+  projected onto the high-poly; LOD4/2/0 = the cage and 1/2 Catmull-Clark
+  subdivisions, each re-projected.
+- **`dome`** (pauldrons — thin shells): a two-layer spherical-cap cage
+  (8 around × 2 rings, outer and inner layer + rim) generated from the
+  piece's analytic frame (center, axis, radius, thickness, cap angle).
+  LOD4 is the cage, LOD2/LOD0 are 1/2 *simple* subdivisions followed by
+  exact placement: every vertex carries a `shell`
+  attribute (1 outer, 0 inner, interpolated by the subdivision) and is put
+  back at radius `r + t·shell` and, on the rim, at the cap angle. Projecting
+  a 5 mm shell onto its high-poly folded it (both layers snapped to the
+  nearest side), and classifying layers by normal failed at the rim.
+- **`remesh`** (organic: hair, beard, horns, tusks): **QuadriFlow** per
+  connected part, at unit scale, with a face budget by area share; the result
+  is shrink-wrapped to the high-poly, checked for crossing faces, and falls
+  back to a self-checking collapse decimation of the high-poly if it folds.
+  LOD2/LOD4 are decimations of LOD0 to 25 % / 8 % (never below 48 / 24
+  triangles).
+
+All pieces are UV-unwrapped into the body's atlas and carried through the
+bake, texture, rig and LOD stages with the body.
 
 ### 2b. Procedural body: a designed cage (`retopo.py`)
 
@@ -220,21 +309,31 @@ functions:
 
 - **Material ID** = `costume.region_id(P)`: the *same masks that sculpted the
   garments*, evaluated per texel — lines up with the hems in the bake exactly,
-  like an ID map baked from high-poly vertex colors. Soft-blended at borders
+  like an ID map baked from high-poly vertex colors; pieces come from the
+  bake's `part` map instead (exact, no mask). Soft-blended at borders
   (0.6 px) to avoid aliasing.
-- **Recipes** (albedo / roughness / metal / height):
-  - *skin*: tanned base, the three facial color zones (yellowish forehead,
-    red middle third: nose/cheeks/ears, blue-grey beard shadow), lips,
-    painted eyebrows, freckles, pores (cellular noise) in roughness + height,
-    oily T-zone (lower roughness);
-  - *linen*: plain weave in UV space at physical scale (texel size from the
-    position map), slubs, sweat/dirt at pits/collar/cuffs, AO/cavity grime;
-  - *leather* (jerkin, belt, pouch, boots): grain, wrinkles, darker cavities,
-    lighter + smoother worn edges from curvature, scratches, **stitch rows at a
-    fixed distance from the garment border measured in 3D** (KD-tree), mud
-    rising from the ground on boots;
-  - *wool twill*, *aged brass* (polished edges, tarnish in cavities,
-    metallic drops under grime), *rubber sole*.
+- **A material library, dispatched per region** by the region's kind and the
+  spec's `material` + `color` (albedo / roughness / metal / height):
+  - *skin* (spec: color, lips, freckles, stubble, roughness): base tone, the
+    three facial color zones derived from it (yellowish forehead, red middle
+    third: nose/cheeks/ears, blue-grey beard shadow scaled by `stubble`),
+    lips, painted eyebrows, freckles, pores (cellular noise) in roughness +
+    height, oily T-zone;
+  - *hair* (caps, beard, ponytail, bun): anisotropic strand noise combed
+    front-to-back on the crown and downward on the sides, beard and pieces;
+    a feathered hairline where darkened scalp shows between strands;
+  - *linen* / *cloth*: plain weave in UV space at physical scale (texel size
+    from the position map), slubs, sweat/dirt at pits/collar/cuffs,
+    AO/cavity grime (cloth: finer, cleaner);
+  - *leather*: grain, wrinkles, darker cavities, lighter + smoother worn
+    edges from curvature, scratches, **stitch rows at a fixed distance from
+    the garment border measured in 3D** (KD-tree), mud rising from the
+    ground; grain size, wear, roughness, mud and stitch distance per garment
+    (`LEATHER_USE`: a belt is finer and more worn than a vest);
+  - *wool* twill, *fur* (strands and tufts, matte), *metal* (measured
+    reflectance for brass/iron/steel/silver/gold/bronze, polished edges,
+    tarnish in cavities, grime), *horn* (growth rings banded by distance from
+    the head, streaks, polished edges; horns and tusks), rubber *sole*.
 - **Detail normals**: the height channel → tangent-space normal (gradients in
   UV space divided by meters-per-texel) → combined with the baked normal by
   **Reoriented Normal Mapping**.
@@ -263,10 +362,16 @@ functions:
   nearest bone segment (arm and leg roots slightly penalized, never the other
   side's limb) cleaned by majority vote over the mesh; on the designed cage
   from the cage's own labels. One sparse LU, one solve per bone: ~2 s.
-- **Hard gear** (the pouch) gets one weight set for the whole piece — the
-  average of the skin weights under it — so it rides the hip rigidly instead
-  of bending with every skin vertex it touches, then joins the body mesh of
-  each LOD (one skinned mesh per LOD).
+- **Pieces are rigid.** Hair, beard, horns and tusks are bound 100 % to the
+  `head` bone. Hard gear resting on the skin (pouch, pauldrons) gets one
+  weight set for the whole piece — the average of the skin weights under it
+  (a pouch uses only its top 20 %, the belt loop; a pauldron all of it) — so
+  it rides the body rigidly instead of bending with every skin vertex it
+  touches. The pelvis bone's heat segment spans both hip joints
+  (`EXTRA_SEGMENTS`), otherwise the thigh claims the side of the hip and a
+  belt pouch swings with the leg (71 % thigh before, 65 % pelvis after).
+  Every piece then joins the body mesh of each LOD (one skinned mesh and one
+  draw call per LOD).
 - **Twist bones** take a linear share (up to 60 %) of their parent along the
   segment — the candy-wrapper fix for forearm/upper-arm/thigh/calf twist.
 - **Engine cleanup**: ≤ 4 influences per vertex, weights < 0.01 pruned,
@@ -280,7 +385,7 @@ functions:
 
 ## 7. LODs (`lods.py`)
 
-| LOD | How (wrapped template) | Tris incl. pouch | Typical screen size |
+| LOD | How (wrapped template) | Tris (Ranger, incl. pouch) | Typical screen size |
 |---|---|---|---|
 | LOD0 | the wrapped base mesh, triangulated | 24.5 k | close-up / hero |
 | LOD1 | LOD0 collapse-decimated 50 % | 12.3 k | 0.5 |
@@ -294,8 +399,9 @@ hands with a protection group whose weight is capped below 1, and
 **self-checking**: a collapse can fold a narrow crease (gluteal cleft,
 crotch) into itself, so each result is tested for crossing faces and the
 source vertices around any crossing are frozen and the decimation redone
-(one retry, 38 frozen vertices, on this character). Gear pieces have their
-own LOD4/LOD2/LOD0 (box cage subdivisions) and are joined into each body LOD.
+(one retry with a few dozen frozen vertices is typical). Pieces bring their
+own LOD0/LOD2/LOD4 (section 2c) and are joined into each body LOD; LOD1 and
+LOD3 are made from the joined mesh.
 Eyes: 720-tri spheres on LOD0–2, 168-tri on LOD3–4. All LODs share the
 material and UV layout.
 
@@ -343,25 +449,31 @@ walk take, textures embedded in the GLB.
 
 ## Honest limits of this pipeline
 
-- **Likeness and anatomy** are limited by primitive-based sculpting: the head
-  reads as a stylized-realistic male, not a portrait; a human sculptor still
-  wins on subtle facial anatomy.
-- **Hair** is a sculpted cap with painted strands, not hair cards/strands.
+- **Body space** is MakeHuman's: humans of any sex, age, build and ethnicity
+  and near-human races via morph modifiers. Extreme cartoon proportions,
+  tails, wings, extra limbs and non-bipeds are out of reach of one wrapped
+  template.
+- **Likeness** of a specific person is not a goal; faces are MakeHuman
+  faces steered by modifiers.
+- **Hair** is a sculpted cap (buzz/short/mohawk) plus rigid pieces
+  (ponytail, bun, long beard) with painted strands — not hair cards or
+  strands, no long flowing hair or braids.
+- **Garments are skin-tight shells** (a few mm) from a fixed library: fine
+  for fitted clothing, but anything that bridges the legs or hangs free
+  (skirts, robes, capes, long coats) needs its own mesh pieces and cloth
+  sim or bones. No helmets or masks yet.
 - **Face**: the template has a mouth bag but there are no teeth/tongue
   meshes, no facial rig or blend shapes (a jaw/brow/lip rig or ARKit-style
   shape keys would be next — the fixed template topology makes them
-  reusable across characters).
+  reusable across characters). Eyes are simple spheres.
 - **Rest pose** is the reference's: arms 41° down, elbows bent 46° with the
   forearms forward. Engines retarget from it fine, but a stricter A-pose
   (elbows ~15°) would need the reference reposed before sculpting.
-- **Garments are skin-tight shells** (a few mm): fine for a fitted outfit, but
-  loose cloth (a cape, a coat skirt) needs its own mesh pieces and cloth sim
-  or bones.
 - **Materials** are procedural; realistic, but no scanned skin/fabric data.
-- **Subsurface scattering** is provided as a mask; the look depends on the
+  **Subsurface scattering** is provided as a mask; the look depends on the
   engine's skin shader.
-- The buckle is still part of the body sculpt; the pouch is a separate piece
-  with its own high-poly, low-poly LODs and rigid skin.
+- Belt buckles are part of the body sculpt; everything else that is hard
+  (pouch, pauldrons, horns, tusks) is a separate piece.
 
 ## Lessons learned building it (bugs worth not repeating)
 
@@ -407,4 +519,26 @@ walk take, textures embedded in the GLB.
 - **Unbounded KD queries on a 10 M-cell grid** took 170 s per stage; bounded
   queries near the surface + a connectivity fill for the rest give identical
   signs in 3.7 s.
-- **A long ray from bare skin is a wrong hit**: limit offsets per material.
+- **A ray from bare skin is a wrong hit**: limit offsets per material, and
+  where the sculpt is the template's own surface (bare skin), cast none.
+- **Search for a landmark inside a bounded window.** The chin was found as
+  "the lowest point of the face profile"; on a stockier body the search
+  wandered down the torso and landed at the groin, and the shirt mask (which
+  never touches the chin) vanished. Bound the window relative to other
+  landmarks and assert the result's distance.
+- **QuadriFlow is scale-sensitive and fails silently** (`CANCELLED`) on
+  small parts: it runs a manifold check at its own tolerance. Remesh each
+  connected part separately at unit scale, clean the input (merge doubles,
+  dissolve degenerates, fill holes), give it a budget by area share, verify
+  the result has no crossing faces, and keep a decimation fallback.
+- **Thin shells can't be projected**: a 5 mm pauldron shell snapped both
+  layers to the same side. Build it from its analytic frame and carry the
+  layer (outer/inner) as a vertex attribute through subdivision.
+- **An orientation built from the wrong reference is wrong everywhere**: the
+  pauldron's axis was taken from the torso's outward normal; it must be
+  perpendicular to the upper arm (plus a lift), or it floats off the
+  shoulder on every body.
+- **Texture regions follow the geometry masks, not the style name**: the
+  mohawk's shaved sides were textured as hair because the style reused the
+  short-hair cap mask; region masks must be exactly the sculpted strip.
+
