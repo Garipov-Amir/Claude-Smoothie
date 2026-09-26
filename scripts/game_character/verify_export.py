@@ -18,7 +18,9 @@ def check(path):
     else:
         bpy.ops.import_scene.fbx(filepath=path)
     arms = [o for o in bpy.data.objects if o.type == "ARMATURE"]
-    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+    # the glTF importer adds an icosphere as the bones' display shape
+    shapes = {pb.custom_shape for a in arms for pb in a.pose.bones if pb.custom_shape}
+    meshes = [o for o in bpy.data.objects if o.type == "MESH" and o not in shapes]
     info = {
         "file": os.path.basename(path),
         "armatures": len(arms),
