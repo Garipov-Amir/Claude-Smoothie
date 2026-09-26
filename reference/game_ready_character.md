@@ -26,7 +26,7 @@ the CPU**.
 | Stage | Module(s) | Output | Senior checklist it satisfies |
 |---|---|---|---|
 | highpoly | `sdf.py`, `humanoid.py`, `costume.py`, `build_highpoly.py` | `highpoly.npz` (~4.3 M tris) | forms → planes → details; cloth with thickness and hems; ~1 mm detail |
-| lowpoly | `retopo.py`, `uvs.py`, `build_lowpoly.py` | `lowpoly.blend` (cage, LOD2, LOD0 with UVs) | 100 % quads, loops on joints, face loops, seams hidden, texel density |
+| lowpoly | `wrap.py` (reference body) or `retopo.py` (procedural), `uvs.py`, `build_lowpoly.py` | `lowpoly.blend` (LOD0/LOD2/LOD4 + gear pieces, UVs) | quads with animation loops, closed, no self-intersections, seams hidden, texel density |
 | bake | `bake.py`, `build_bake.py` | `bakes_<res>.npz` | synced tangents, cage/ray distance, dilation, bake cleanup |
 | textures | `texture.py`, `build_textures.py` | `textures/*.png` | PBR ranges, ID-driven smart materials, detail normals, ORM packing |
 | lookdev | `lookdev.py`, `eyes.py`, `build_lookdev.py` | `lookdev.blend` | engine-style material (textures only), separate eyes |
@@ -41,6 +41,20 @@ A code-only stand-in for ZBrush. The model is an ordered list of operations
 (smooth union / smooth subtraction / intersection / arbitrary field edits)
 that can be evaluated on any grid.
 
+- **Anatomical base (default)**: the body is the limit surface of the
+  MakeHuman base mesh (CC0) with its young-male and muscle targets, scaled to
+  1.80 m, turned into a signed distance field (`reference_body.MeshSDF`: dense
+  subdivision samples + normals, point-to-plane near the surface, a coarse
+  inside/outside grid filled by connectivity for far points). Garments, hair
+  and gear are sculpted on top of it. Anatomy is then correct by construction
+  (skull, face, hands, feet, muscle masses, proportions), which primitive
+  sculpting never reached. The skeleton and finger chains come from the
+  reference's joint helpers; `landmarks.py` measures eyes, nose tip, lips,
+  chin, ears, neck and crotch on the surface, and every later stage (garment
+  necklines, hairline, texture color zones, eye bones, LOD protection) keys
+  off those landmarks instead of hard-coded coordinates.
+- **Procedural body** (`body="procedural"`) is the primitive sculpt below,
+  tuned to 33 ANSUR-II anthropometric targets (`anthropometry.py`).
 - **Primitives**: oriented ellipsoids (muscle masses, fat pads), round cones
   (limbs, fingers, bones), round boxes (buckle, pouch, soles), tori (boot
   cuff), `Custom` (any distance function, e.g. eyelids, sole outline, the
@@ -76,43 +90,81 @@ that can be evaluated on any grid.
   brick, welded. A whole clothed character at 1.2 mm ≈ 4.3 M triangles in
   ~2 min / < 2 GB instead of a 20+ GB dense grid.
 
-## 2. Retopology — designed, not computed (`retopo.py`)
+## 2. Retopology
 
-Topology must deform, so it is laid out like a manual retopo:
+Two routes, picked by the body the sculpt was built on.
+
+### 2a. Reference body: wrap a base topology (`wrap.py`) — the default
+
+Studios don't retopologize every realistic character from scratch: they keep
+one animation-tested **base mesh** and wrap it onto each new sculpt or scan
+(R3DS Wrap, shrink-wrap + relax). Edge loops stay where the face and joints
+need them, UV seams stay hidden in the same places, and every character built
+this way shares one topology (weights, blend shapes, UV masks carry over).
+
+The template is the MakeHuman base mesh (CC0): 13 378 quads, closed (eye
+sockets and a mouth bag included), no self-intersections, UV islands for
+torso+legs, head, arms, feet, mouth and sockets. The sculpt sits on its limit
+surface, so every template vertex has an exact anchor:
+
+1. **Anchor**: Catmull-Clark limit position + normal of each control vertex
+   (one subsurf level with *limit surface* on; Blender keeps control vertices
+   first in the result).
+2. **Offset to the outside of the sculpt**: ray from 4 mm inside along the
+   limit normal; the first exit through the high-poly is the outer surface of
+   whatever was sculpted on top. A hit counts only if it faces the same way
+   and lies within the **material's allowance**, read from the same region
+   masks that sculpted the costume: bare skin 4 mm, garments 28 mm, hair
+   45 mm. (Without the allowance, rays from the lip line went through the lip
+   and landed 26 mm away.)
+3. **Interior islands** (eye sockets, mouth bag — the small UV islands inside
+   the head) stay on the body, behind eyeballs and lips.
+4. **Covered detail is re-cast from a smoothed base**: where a garment stands
+   off the body (trousers bridging the gluteal cleft) rays from the detail fan
+   out and land out of order; there the template is Taubin-smoothed first and
+   rays are cast from that base.
+5. **Untrusted offsets** are filled harmonically from their neighbors,
+   **mirror-averaged** (the game mesh stays symmetric, which also lets the LOD
+   decimator work symmetrically), and **no vertex may cross the mirror plane**:
+   with the left half at x ≥ 0.6 mm and the right at x ≤ −0.6 mm the halves
+   cannot pass through each other where the sculpt bridges the midline.
+
+**Booted variant.** Toes cannot be laid onto a boot without folding: fixed
+topology, five separate digits, one toe box. Every smoothing/inflation scheme
+tried left hundreds to thousands of crossing faces (Taubin, uniform and
+cotangent implicit fairing + normal offsets, balloon inflation). Studios keep
+a "shoe" variant of the base mesh for this, and so does `boot_feet`: each
+foot is cut at the closed metatarsal-head edge loop (32 edges, the most
+distal ≥ 24-edge loop behind the ball joint) and capped with a domed quad
+grid built as a Coons patch of that ring (10 × 6, mirror-exact on both feet).
+The wrap then stretches that toe box over the sculpted boot.
+
+Result (this character): LOD0 = 11 888 verts / 23 772 tris, closed, 0
+non-manifold, 0 degenerate, **0 self-intersecting face pairs**; the stage
+takes ~17 s.
+
+### 2b. Procedural body: a designed cage (`retopo.py`)
+
+The primitive-sculpted body (`humanoid.build(body="procedural")`) has no
+template, so its topology is laid out like a manual retopo:
 
 - **Ring counts** (cage level; LOD0 doubles them): trunk + head 16, arms and
-  legs 10, fingers/thumb 4, palm 10. Denser where the eye is drawn (face >
-  hands > body): head azimuth slots are packed toward the front
-  (`HEAD_AZ`).
-- **Joint loops**: rings bracket every joint (shoulder, elbow, wrist, knee,
-  ankle, finger joints) — after one subdivision that is ≥ 3 loops across each
-  bend, the minimum for clean deformation.
-- **Junction patterns** (all quads, no n-gons):
-  - *crotch*: the 16-ring torso splits into two 10-rings = 9 torso verts + one
-    crotch vertex each (the two legs share the crotch edge chain);
-  - *shoulder*: the arm plugs into a 2×3-face hole in the torso side; its
-    first ring lies on a plane steeper than perpendicular to the arm so it runs
-    over the deltoid and through the armpit;
-  - *hand*: wrist ring slots rotate 18° over the forearm so the palm ring is
-    5 dorsal + 5 palmar verts; four 4-sided finger tubes share their webbing
-    edges; the thumb grows from the palm's side face;
-  - *caps*: rings are closed with quad grids (4×4 crown, 3×2 toe), never
-    triangle fans.
-- **Face loops**: two insets around each eye (inner faces removed for the
-  eyeball, hole snapped onto the lid margin with even spacing) and one around
-  the lips, the mouth line its own loop.
-- **Placement**: cage vertices are ray-cast from inside the body along each
-  ring's slot directions, then the cage is subdivided (Catmull-Clark) and every
-  vertex is re-projected and tangentially relaxed a few times (the "relax +
-  snap" loop of retopo tools). Projection mode per region: radial from the
-  bone for limbs/trunk, nearest-point for palm/fingers/crotch.
-- **Guards**: a spike pass pulls vertices that dove into cavities (nostrils,
-  ear canal) back to the neighbor average; a collapse guard separates verts
-  that snapped onto the same point of a sharp edge — including **quad
-  diagonals**, which only become edges after triangulation.
-- **Result** (report): 100 % quads, 0 n-gons, poles only at junctions
-  (56 × valence 3, 28 × valence 5, 14 × valence 6 — identical at every
-  subdivision level), median quad-corner deviation ≈ 2°.
+  legs 10, fingers/thumb 4, palm 10; head azimuth slots packed toward the
+  front (`HEAD_AZ`).
+- **Joint loops** bracket every joint — ≥ 3 loops across each bend after one
+  subdivision.
+- **Junctions** (all quads): crotch split 16 → 2 × 10, the arm plugged into a
+  2 × 3-face hole in the torso side, hand rings rotated to give 5 dorsal + 5
+  palmar verts, four finger tubes sharing their webbing edges, quad-grid caps.
+- **Face loops**: two insets around each eye continuing into a closed socket
+  "bag" behind the lids (so the mesh is watertight), one around the lips.
+- **Placement**: ray-cast cage, Catmull-Clark subdivision, re-projection +
+  tangential relax; radial from the bone for limbs/trunk, nearest-point for
+  palm/fingers/crotch; spike and collapse guards (including quad diagonals).
+
+This cage is tied to the procedural body's proportions and pose; on the
+reference body (elbows bent 46°, different head) it folded badly, which is
+why the reference route wraps a template instead.
 
 ## 3. UVs (`uvs.py`)
 
@@ -120,8 +172,13 @@ Topology must deform, so it is laid out like a manual retopo:
   center, neck base, torso sides (front/back split below the armpit),
   shoulder rings, arm undersides, wrists, palmar side of hands and every
   finger, crotch rings, inner legs, boot tops.
-- Seams are authored on the **cage**; the cage is unwrapped once (ABF) and all
-  subdivision LODs inherit the UVs, so **one texture set serves every LOD**.
+- Wrapped template: seams are the template's UV discontinuities (hidden
+  where MakeHuman's layout hides them); the mesh is re-unwrapped with ABF
+  along them and packed by this pipeline. Designed cage: seams are authored on
+  the cage and every subdivision LOD inherits the UVs. Either way decimated
+  LODs carry the UVs along, so **one texture set serves every LOD**.
+- **Gear pieces share the atlas**: the pouch is smart-projected and packed
+  together with the body (multi-object edit), one material, one draw call.
 - Texel density equalized (`average_islands_scale`), then the head islands
   get **1.6×** (the face is what players look at), then packed (margin 0.35 %
   of the atlas ≈ 7 px at 2K / 14 px at 4K).
@@ -143,6 +200,15 @@ Topology must deform, so it is laid out like a manual retopo:
   points sideways/backwards (z < 0.15: a ray hit the wrong surface — nostrils,
   under a flap) are refilled from good neighbors by normalized convolution.
   ~0.5 % of texels on this character.
+- **Bake per piece, then merge** ("match by mesh name" in Substance/Marmoset
+  terms): the body low-poly bakes only from the body high-poly, the pouch
+  only from the pouch high-poly, so a body texel next to the pouch never
+  catches the pouch's surface. All high-polys stay render-visible, so AO
+  still gets the contact shadow of the pouch on the hip. The per-piece maps
+  are merged in the shared atlas by nearest UV island (each piece keeps its
+  own dilated margin), and the merged `part` map tells the texture stage
+  which texels are pouch — the leather recipe no longer leaks onto the
+  trousers around it.
 - DirectX-convention engines (Unreal): use `*_Normal_DirectX.png` (green
   flipped). Unity/glTF/Blender: OpenGL.
 
@@ -190,10 +256,17 @@ functions:
   lowerarm/fingers = flex, `+Z` on the left upperarm lowers it from the A-pose.
 - **Skinning** = bone heat (Baran & Popović 2007) implemented directly:
   `(L + M·H) w = M·H·p` with a clamped cotangent Laplacian, vertex areas M,
-  heat `H = c/d²` from the nearest *candidate* bone. Candidates come from the
-  retopo part labels (a thigh vertex can't be pulled by the other thigh, the
-  torso side can't be claimed by the hanging arm) — the job Pinocchio's
-  visibility test does. One sparse LU, one solve per bone: ~2 s for LOD0.
+  heat `H = c/d²` from the nearest *candidate* bone. Candidates come from
+  per-vertex part labels (a thigh vertex can't be pulled by the other thigh,
+  the torso side can't be claimed by the hanging arm) — the job Pinocchio's
+  visibility test does. On the wrapped template the labels come from the
+  nearest bone segment (arm and leg roots slightly penalized, never the other
+  side's limb) cleaned by majority vote over the mesh; on the designed cage
+  from the cage's own labels. One sparse LU, one solve per bone: ~2 s.
+- **Hard gear** (the pouch) gets one weight set for the whole piece — the
+  average of the skin weights under it — so it rides the hip rigidly instead
+  of bending with every skin vertex it touches, then joins the body mesh of
+  each LOD (one skinned mesh per LOD).
 - **Twist bones** take a linear share (up to 60 %) of their parent along the
   segment — the candy-wrapper fix for forearm/upper-arm/thigh/calf twist.
 - **Engine cleanup**: ≤ 4 influences per vertex, weights < 0.01 pruned,
@@ -256,13 +329,21 @@ non-manifold, 0 degenerate, 0 UV overlap, ≤ 4 influences, 0 unweighted.
   reads as a stylized-realistic male, not a portrait; a human sculptor still
   wins on subtle facial anatomy.
 - **Hair** is a sculpted cap with painted strands, not hair cards/strands.
-- **Face**: closed mouth, no mouth bag/teeth/tongue, no facial rig or
-  blendshapes (a jaw/brow/lip rig or ARKit-style shape keys would be next).
+- **Face**: the template has a mouth bag but there are no teeth/tongue
+  meshes, no facial rig or blend shapes (a jaw/brow/lip rig or ARKit-style
+  shape keys would be next — the fixed template topology makes them
+  reusable across characters).
+- **Rest pose** is the reference's: arms 41° down, elbows bent 46° with the
+  forearms forward. Engines retarget from it fine, but a stricter A-pose
+  (elbows ~15°) would need the reference reposed before sculpting.
+- **Garments are skin-tight shells** (a few mm): fine for a fitted outfit, but
+  loose cloth (a cape, a coat skirt) needs its own mesh pieces and cloth sim
+  or bones.
 - **Materials** are procedural; realistic, but no scanned skin/fabric data.
 - **Subsurface scattering** is provided as a mask; the look depends on the
   engine's skin shader.
-- Hard gear (buckle, pouch) is fused into the body mesh; a production asset
-  would ship them as separate pieces with their own high-poly.
+- The buckle is still part of the body sculpt; the pouch is a separate piece
+  with its own high-poly, low-poly LODs and rigid skin.
 
 ## Lessons learned building it (bugs worth not repeating)
 
@@ -292,3 +373,20 @@ non-manifold, 0 degenerate, 0 UV overlap, ≤ 4 influences, 0 unweighted.
   topology with a Wireframe *modifier* on a copy.
 - **Stitches/edge effects must use 3D distance**: in UV space every island
   seam looks like a garment border.
+- **A toe cannot become a toe box.** Folding the template's five toes onto
+  one boot surface failed with every smoothing/inflation scheme; swap to a
+  "shoe" variant of the base mesh (cut at a closed ring, quad-cap it).
+- **A vertex with inverted decimation weight 0 is never collapsed** by
+  Blender's collapse decimator (the group's factor does not matter). Fully
+  "protecting" the face and hands froze them, and a dense base mesh could
+  not get below 75 %. Cap protection weights below 1.
+- **Relaxing a fold in place oscillates** instead of resolving it; fix the
+  cause (where rays start, what may cross the midline) instead.
+- **Seed flood fills from the right place**: the "most forward face" on the
+  character's left was a fingertip (hands hang in front), not the toe, and
+  the toe cut tried to delete the whole body. Restrict seeds by region, and
+  sanity-check the size of what a fill selects.
+- **Unbounded KD queries on a 10 M-cell grid** took 170 s per stage; bounded
+  queries near the surface + a connectivity fill for the rest give identical
+  signs in 3.7 s.
+- **A long ray from bare skin is a wrong hit**: limit offsets per material.
