@@ -3,7 +3,8 @@
 A Claude Code skill + optional MCP connector for generating 3D models in
 Blender from a text description or a reference photo — stylized props and
 creatures, and (Workflow C) a complete **game-ready realistic character**:
-sculpt → quad retopology → UVs → baked normal/AO/curvature → PBR texture set →
+sculpt on an anatomical reference body → wrapped quad base topology (watertight,
+no self-intersections) → UVs → baked normal/AO/curvature → PBR texture set →
 UE-compatible skeleton, skinning and a walk cycle → LOD0–LOD4 → FBX/GLB with a
 validation report. See [`reference/game_ready_character.md`](reference/game_ready_character.md)
 and [`examples/game_character/`](examples/game_character/). Default
