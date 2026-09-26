@@ -177,40 +177,25 @@ neural reconstruction, consistent with Workflow B.
 2. `carved = k.carve_from_silhouettes([{"mask": "<out>/prep/silhouette_front.png", "axis": "front"}, {"mask": "<out>/prep/silhouette_side.png", "axis": "side"}], size=2.0)`
 3. Same as Workflow B from here: material from `palette.json`, render and view before finishing. Output is blocky at the silhouette edges by default — raise `resolution` or follow with `add_bevel`/`add_subsurf` for a softer look.
 
-## Workflow C — game-ready realistic character (full production pipeline)
+## Workflow C — game-ready humanoid character (full production pipeline)
 
-Use when the ask is a character that has to *work in a game*: clean
-deforming topology, UVs, baked maps, PBR textures, skeleton + weights,
-LODs, FBX/GLB. Full technique, numbers and pitfalls:
-`reference/game_ready_character.md` — read it before changing anything.
+For any game-ready humanoid (human of any sex/age/build, or a fantasy race
+such as elf, dwarf, orc, goblin, demon) use the dedicated skill
+**[`skills/humanoid-character/SKILL.md`](skills/humanoid-character/SKILL.md)**:
+the character is a JSON spec (body sliders + MakeHuman modifiers, outfit
+layers, pieces like horns/tusks/ponytail/pauldrons, colors) and one command
+builds sculpt → wrapped watertight topology → UVs → bakes → PBR textures →
+skeleton + skin + walk → LOD0–4 → FBX/GLB + validation report.
 
 ```bash
-pip install bpy scikit-image scipy pillow        # if no Blender install; or use Blender's python
-python scripts/game_character/build_character.py <out> --res 2048   # ~12 min on 4 cores
-python scripts/game_character/verify_export.py <out>/export/SK_Character.glb
-cat <out>/export/report.json                                          # validation numbers
+python scripts/game_character/preview_spec.py <spec.json|preset> preview.png   # 1-2 min clay check
+python scripts/game_character/build_character.py <out> --spec <spec.json|preset> --res 2048
 ```
 
-Stages (each re-runnable with `--from <stage>`): `highpoly` (SDF sculpt
-on an anatomical CC0 reference body, clothing/hair/gear on top, 4.3 M tris)
-→ `lowpoly` (a clean base topology *wrapped* onto the sculpt — booted
-variant when the costume has boots — plus gear pieces, UVs, LOD2/LOD4)
-→ `bake` (per piece: normal/AO/curvature/position, merged in one atlas)
-→ `textures` (BaseColor, Normal GL/DX, ORM, Height) → `lookdev`
-(engine-style material, eyes) → `rig` (63-bone UE-named skeleton, heat
-skinning, rigid gear, walk cycle) → `export` (LOD0–4, FBX per engine, GLB,
-`report.json` incl. watertightness and self-intersections per piece).
-
-To make a *different* character, edit the data, not the pipeline: body
-shape via the reference's morph targets (`reference_body.build`: muscle,
-stature) or the procedural body (`humanoid.build(body="procedural")`),
-outfit in `costume.py` (garment masks + `region_id` + `dress`), materials in
-`texture.py` (recipes per region). Everything positional keys off the
-landmarks (`landmarks.py`), not coordinates. Always look at: the clay sheet
-of the high-poly, the true-edge wireframe close-ups (head, hands, feet,
-crotch, shoulder) **with self-intersecting faces highlighted**, the textured
-turnaround, the walk frames + stress poses, and the report
-(`watertight: true`, `self_intersecting_face_pairs: 0` on every LOD).
+Presets: `ranger`, `scout`, `dwarf_smith`, `orc_warrior`, `horned_demon`
+(`scripts/game_character/presets/`). Spec fields:
+`skills/humanoid-character/reference/spec.md`; technique and lessons:
+`reference/game_ready_character.md`.
 
 ## Style toolkit
 
