@@ -411,6 +411,20 @@ def outer_offsets(P, N, bvh, inner, dmax, start=0.004):
     return d, ok
 
 
+def normal_gaps(me, P, N, sel, reach=0.03):
+    """Distance along the limit normal to the next surface of the body
+    itself (the neighboring finger), for the selected vertices; inf if none
+    within reach."""
+    from mathutils.bvhtree import BVHTree
+    t = BVHTree.FromPolygons([tuple(p) for p in P], [tuple(f.vertices) for f in me.polygons])
+    g = np.full(len(P), np.inf)
+    for i in np.nonzero(sel)[0]:
+        hit, _n, _f, dist = t.ray_cast(Vector(P[i] + N[i] * 1e-4), Vector(N[i]), reach)
+        if hit is not None:
+            g[i] = dist + 1e-4
+    return g
+
+
 def mirror_map(P, tol=0.002):
     """Index of each vertex's mirror twin across X (None if not symmetric)."""
     from scipy.spatial import cKDTree
@@ -484,6 +498,30 @@ def dilate(mask, nb, rings=2):
     return m
 
 
+def deflate(obj, base, dirs, d, allowed, nb, mi, P, log=print, rounds=10):
+    """Shrink the offsets of `allowed` vertices whose faces cut the mesh
+    until nothing crosses. Converges where the base is the template's own
+    limit surface (the hands: never re-cast), which has no self-intersection
+    at offset 0."""
+    for r in range(rounds):
+        vi, npairs = intersecting_verts(obj)
+        m = np.zeros(len(d), dtype=bool)
+        m[vi] = True
+        m &= allowed
+        if not m.any():
+            break
+        m = dilate(m, nb, rings=1) & allowed
+        if mi is not None:
+            m |= m[mi]
+        d[m] *= 0.5
+        _set_co(obj.data, base + dirs * d[:, None])
+        if mi is not None:
+            symmetrize(obj, mi)
+            keep_sides(obj, P)
+        log(f"wrap: round {r}: {npairs} crossing face pairs, offsets halved on {int(m.sum())} hand verts")
+    return d
+
+
 def symmetrize(obj, mi):
     me = obj.data
     co = np.array([v.co[:] for v in me.vertices])
@@ -516,6 +554,16 @@ def wrap(obj, hp, log=print, repair_rounds=0):
     nb = neighbours(me)
     dmax = max_offsets(P)
     d, ok = outer_offsets(P, N, bvh, inner, dmax)
+    # Fingers are separate tubes in any real garment, but a glove's offset
+    # shell merges fingers that nearly touch (a slim hand's are < 4 mm apart
+    # at the web) and a ray from one finger then exits on the far side of the
+    # next. On the hands an offset never exceeds 45 % of the gap to the next
+    # surface of the body along the normal, and nothing is re-cast there.
+    from retopo import HAND, FINGER
+    kind = part_labels(obj, LM["J"]) // 10 * 10
+    hand = np.isin(kind, (HAND, FINGER))
+    cap = 0.45 * normal_gaps(me, P, N, hand)          # inf off the hands
+    ok &= d <= cap
     # lids and lips (two rings around the sockets and the mouth bag) stay on
     # the template's limit surface: rays from a lip crease pass through the
     # closed lips of the sculpt and would push one lip into the other
@@ -533,6 +581,7 @@ def wrap(obj, hp, log=print, repair_rounds=0):
         d = 0.5 * (d + d[mi])
     else:
         log("wrap: template not mirror-symmetric, offsets left as is")
+    d = np.minimum(d, cap)
     # Where the sculpt covers template detail (boots over toes, trousers over
     # the cleft) rays from that detail fan out and land out of order on the
     # covering surface. There the template is smoothed first (toes merge into
@@ -545,7 +594,7 @@ def wrap(obj, hp, log=print, repair_rounds=0):
         kinds = np.array([costume.region_kind(r) for r in range(len(costume.region_names()))])
         w[np.isin(kinds[rid], ("footwear", "sole"))] = 1.0      # toes inside the boots
     w = np.maximum(w, dilate(w > 0.5, nb, rings=3).astype(np.float64))
-    w[keep] = 0.0
+    w[keep | hand] = 0.0
     Ps = taubin(P, nb, w, iterations=60)
     _set_co(me, Ps)
     Ns = _normals(me)
@@ -559,6 +608,10 @@ def wrap(obj, hp, log=print, repair_rounds=0):
     d = harmonic_fill(d, good, nb)
     if mi is not None:
         d = 0.5 * (d + d[mi])
+    capped = int((d > cap).sum())
+    d = np.minimum(d, cap)
+    if hand.any():
+        log(f"wrap: hands: offsets capped by the gap between fingers ({capped} verts at the cap)")
     co = base + dirs * d[:, None]
     _set_co(me, co)
     if mi is not None:
@@ -566,6 +619,8 @@ def wrap(obj, hp, log=print, repair_rounds=0):
         n = keep_sides(obj, P)
         if n:
             log(f"wrap: {n} verts held on their side of the mirror plane")
+    if hand.any():
+        deflate(obj, base, dirs, d, hand, nb, mi, P, log)
     # optional: relax around any remaining fold (off by default: relaxing a
     # fold in place tends to oscillate rather than resolve it)
     for r in range(repair_rounds):
