@@ -79,20 +79,29 @@ def _slice(model, center, u, v, half=(0.30, 0.20), res=0.0015):
 
 
 def _contour_at(f, cu, cv, pt_uv):
-    """Contour (in plane coords) of the region containing pt_uv."""
+    """Outer contour (in plane coords) of the solid region around pt_uv.
+    Contours nest (a mouth bag or an eye socket is a hole in the head's
+    section): if pt_uv falls in such a hole, the hole's boundary is skipped
+    and the section around it is returned."""
     from skimage.measure import find_contours
     from matplotlib.path import Path
     res = cu[1] - cu[0]
-    best = None
+    found = []
     for c in find_contours(f, 0.0):
         xy = np.stack([cu[0] + c[:, 1] * res, cv[0] + c[:, 0] * res], axis=1)
         if len(xy) < 8:
             continue
         if Path(xy).contains_point(pt_uv):
             area = abs(np.sum(xy[:-1, 0] * xy[1:, 1] - xy[1:, 0] * xy[:-1, 1])) / 2
-            if best is None or area < best[1]:
-                best = (xy, area)
-    return None if best is None else best[0]
+            found.append((area, xy))
+    if not found:
+        return None
+    found.sort(key=lambda a: a[0])
+    iu = int(np.clip(np.searchsorted(cu, pt_uv[0]), 0, len(cu) - 1))
+    iv = int(np.clip(np.searchsorted(cv, pt_uv[1]), 0, len(cv) - 1))
+    in_hole = f[iv, iu] > 0
+    k = 1 if in_hole and len(found) > 1 else 0
+    return found[k][1]
 
 
 def _hull_perimeter(xy):
@@ -105,7 +114,7 @@ def _hull_perimeter(xy):
 def section(model, center, normal, inside_pt=None, half=(0.30, 0.20)):
     """Circumference / breadth / depth of the cross-section through `center`
     perpendicular to `normal`, for the region containing `inside_pt`."""
-    n = np.asarray(normal, float)
+    n = np.array(normal, dtype=float)       # a copy: never normalize the caller's array
     n /= np.linalg.norm(n)
     ref = np.array([0, 1.0, 0]) if abs(n[1]) < 0.9 else np.array([1.0, 0, 0])
     u = np.cross(ref, n)
@@ -196,12 +205,28 @@ def measure(model, J):
         M["bizygomatic"] = float(np.ptp(front[:, 0]))
     go = None
     c = hslice(float(LM["stomion"][2]) - 0.012, hy)
-    if c is not None:
-        front = c[c[:, 1] < float(LM["ear_l"][1]) - 0.02]
+    if c is not None:  # the jaw angles sit just in front of the ear lobes
+        front = c[c[:, 1] < float(LM["ear_l"][1]) + 0.005]
         go = {"breadth": float(np.ptp(front[:, 0]))}
     M["bigonial"] = go["breadth"] if go else None
     # torso sections
-    nk = horizontal(model, LM["neck_base_z"] + 0.05, (0.0, LM["neck_axis_y"]), half=(0.14, 0.14))
+    # neck: perpendicular to the (forward-leaning) neck axis through the neck
+    # joint — just under the larynx in front; a horizontal slice would cut
+    # the trapezius slopes into it
+    N0, H0 = np.asarray(J["neck_01"], float), np.asarray(J["head"], float)
+    # the narrowest closed section up the axis whose front stays under the
+    # chin (just below the larynx, as ANSUR measures it)
+    nk = None
+    for t in np.arange(0.0, 0.55, 0.05):
+        c3 = N0 + (H0 - N0) * t
+        sc = section(model, c3, H0 - N0, half=(0.10, 0.10))
+        if not sc:
+            continue
+        P3 = c3 + sc["contour"][:, :1] * sc["u"] + sc["contour"][:, 1:2] * sc["v"]
+        front = P3[P3[:, 1] < c3[1]]
+        if len(front) and front[:, 2].max() < float(LM["chin_z"]) - 0.005:
+            if nk is None or sc["circ"] < nk["circ"]:
+                nk = sc
     M["neck_circ"] = nk["circ"] if nk else None
     ch = horizontal(model, 1.300, (0.0, spine_y(1.3) - 0.02))
     if ch:
