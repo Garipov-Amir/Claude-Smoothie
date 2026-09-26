@@ -174,6 +174,10 @@ def beard_long(m, J, p, beard_color):
     zs = [float(pog[2]) + 0.006 * sh, chin_z - 0.004 * sh, chin_z - 0.35 * L, chin_z - 0.7 * L, chin_z - L]
     rx = np.array([0.050, 0.054, 0.050, 0.040, 0.022]) * sh
     ry = np.array([0.022, 0.028, 0.026, 0.020, 0.012]) * sh
+    # the piece hangs from the chin: its top stays under the lower lip (the
+    # moustache is the sculpted short beard) — a full-length ellipsoid at the
+    # chin reached up to the nose and hid the mouth
+    z_top = float(LM["lower_lip"][2]) - 0.008 * sh
     pm = SDFModel()
     cs = []
     for i, z in enumerate(zs):
@@ -181,7 +185,10 @@ def beard_long(m, J, p, beard_color):
         y = float(pog[1]) + 0.012 * sh if i == 0 else min(float(pog[1]) + 0.012 * sh + 0.01 * i * sh,
                                                          (yf if yf is not None else float(pog[1])) - ry[i] - 0.012)
         cs.append(np.array([0, y, z], np.float32))
-        pm.add(Ellipsoid(cs[-1], (rx[i], ry[i], max(0.025 * sh, 0.35 * L))), k=0.02 * sh)
+        rz = max(0.025 * sh, 0.35 * L)
+        if i < 2:
+            rz = max(0.010 * sh, min(rz, z_top - z))
+        pm.add(Ellipsoid(cs[-1], (rx[i], ry[i], rz)), k=0.02 * sh)
 
     def strands(P, f):
         return f + 0.0012 * sh * ridged(P * np.array([1.0, 1.0, 0.12], np.float32), 300.0 / sh, 2, seed=73, sharp=3.0)

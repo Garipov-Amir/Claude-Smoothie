@@ -501,8 +501,8 @@ def dilate(mask, nb, rings=2):
 def deflate(obj, base, dirs, d, allowed, nb, mi, P, log=print, rounds=10):
     """Shrink the offsets of `allowed` vertices whose faces cut the mesh
     until nothing crosses. Converges where the base is the template's own
-    limit surface (the hands: never re-cast), which has no self-intersection
-    at offset 0."""
+    limit surface, which has no self-intersection at offset 0 (everywhere
+    but the covered detail, whose base is the smoothed template)."""
     for r in range(rounds):
         vi, npairs = intersecting_verts(obj)
         m = np.zeros(len(d), dtype=bool)
@@ -518,7 +518,7 @@ def deflate(obj, base, dirs, d, allowed, nb, mi, P, log=print, rounds=10):
         if mi is not None:
             symmetrize(obj, mi)
             keep_sides(obj, P)
-        log(f"wrap: round {r}: {npairs} crossing face pairs, offsets halved on {int(m.sum())} hand verts")
+        log(f"wrap: round {r}: {npairs} crossing face pairs, offsets halved on {int(m.sum())} verts")
     return d
 
 
@@ -619,8 +619,9 @@ def wrap(obj, hp, log=print, repair_rounds=0):
         n = keep_sides(obj, P)
         if n:
             log(f"wrap: {n} verts held on their side of the mirror plane")
-    if hand.any():
-        deflate(obj, base, dirs, d, hand, nb, mi, P, log)
+    # last resort for whatever still crosses (a bearded chin's fold, the
+    # fingers' webs): pull those offsets back toward the base
+    deflate(obj, base, dirs, d, ~keep, nb, mi, P, log)
     # optional: relax around any remaining fold (off by default: relaxing a
     # fold in place tends to oscillate rather than resolve it)
     for r in range(repair_rounds):
