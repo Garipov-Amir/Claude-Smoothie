@@ -155,3 +155,27 @@ def uv_coverage(obj, res):
         dr.polygon(pts, fill=255)
     a = np.asarray(im, dtype=np.float32)[::-1] / 255.0  # flip to row0 = V0
     return a
+
+
+def composite(parts):
+    """Merge per-piece bakes that share one UV atlas ("match by mesh name":
+    each low-poly piece baked only against its own high-poly, so a body
+    texel next to the pouch never catches the pouch's surface).
+
+    parts: list of map dicts (each with "coverage"). Every texel goes to the
+    piece whose islands are nearest, so each piece keeps its own dilated
+    margin. Adds "part" (index of the owning piece, per texel)."""
+    from scipy import ndimage
+    dist = np.stack([ndimage.distance_transform_edt(p["coverage"] < 0.5) for p in parts])
+    owner = np.argmin(dist, axis=0)
+    out = {}
+    for k in parts[0]:
+        if k == "coverage":
+            continue
+        a = parts[0][k].copy()
+        for i, p in enumerate(parts[1:], 1):
+            a[owner == i] = p[k][owner == i]
+        out[k] = a
+    out["coverage"] = np.clip(sum(p["coverage"] for p in parts), 0, 1)
+    out["part"] = owner.astype(np.float32)
+    return out

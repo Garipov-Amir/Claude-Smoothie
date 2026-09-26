@@ -141,7 +141,7 @@ def author(maps, J, log=print):
     log(f"texels to author: {n}")
 
     # ---- regions, anti-aliased as soft weights ----
-    rid = C.region_id(P, J)
+    rid = C.region_id(P, J, part=maps["part"][idx] if "part" in maps else None)
     rid_img = np.full((Hh, Ww), -1, dtype=np.int32)
     rid_img[idx] = rid
     weights = {}

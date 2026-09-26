@@ -387,10 +387,12 @@ def hair_mask(P):
     return smoothstep(zl - 0.002, zl + 0.024, z) ** 2.0 * (1.0 - ear_mask(P)) * near
 
 
-def region_id(P, J):
+def region_id(P, J, part=None):
     """Integer material region per surface point, evaluated with the same
     masks that sculpted the garments — so the ID map lines up with the hems
-    in the bake exactly, like an ID map baked from high-poly vertex colors."""
+    in the bake exactly, like an ID map baked from high-poly vertex colors.
+    `part` (per point: 0 body, 1 pouch — which mesh piece the texel belongs
+    to) decides the pouch exactly; without it the pouch box is used."""
     P = np.asarray(P, dtype=np.float32)
     z = P[..., 2]
     ax = np.abs(P[..., 0])
@@ -399,7 +401,9 @@ def region_id(P, J):
     rid[(trousers_mask(P) > 0.5) & (z < 1.02)] = TROUSERS
     rid[jerkin_mask(P, J) > 0.5] = JERKIN
     rid[belt_mask(P) > 0.5] = BELT
-    if "pouch" in GEAR:
+    if part is not None:
+        rid[np.asarray(part) == 1] = POUCH
+    elif "pouch" in GEAR:
         rid[GEAR["pouch"].eval(P) < 0.003] = POUCH
     if "buckle" in GEAR:
         rid[GEAR["buckle"].eval(P) < 0.0015] = METAL

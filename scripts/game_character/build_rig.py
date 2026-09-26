@@ -8,18 +8,37 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy
 
+import bl_util as U
 import humanoid
 import rig
+
+NAME = "SK_Character"
+
+
+def attach_gear(arm, lod0):
+    """Gear pieces (separate meshes through retopo and bake) join the body
+    mesh of each LOD, so every LOD ships as one skinned mesh / one draw call.
+    LOD0 gear gets its weights here; the other LODs inherit them on export."""
+    for level in ("LOD0", "LOD0_quads", "LOD2", "LOD4"):
+        gear = bpy.data.objects.get(f"{NAME}_Pouch_{level}")
+        body = bpy.data.objects.get(f"{NAME}_{level}")
+        if gear is None or body is None:
+            continue
+        if level == "LOD0":
+            print("  pouch weights:", rig.bind_gear(gear, lod0, arm), flush=True)
+        U.select_only([body, gear], body)
+        bpy.ops.object.join()
 
 
 def main(out_dir):
     t = time.time()
     bpy.ops.wm.open_mainfile(filepath=os.path.join(out_dir, "lookdev.blend"))
-    J = humanoid.skeleton()
+    _m, J = humanoid.build(clothing=False)    # the skeleton of the body that was sculpted
     arm = rig.build_armature(J)
-    lod0 = bpy.data.objects["SK_Character_LOD0"]
+    lod0 = bpy.data.objects[f"{NAME}_LOD0"]
     rig.skin(lod0, arm)
     print(f"[{time.time() - t:.1f}s] LOD0 skinned:", rig.weight_report(lod0), flush=True)
+    attach_gear(arm, lod0)
     for nm, bone in (("Eye_L", "eye_l"), ("Eye_R", "eye_r")):
         o = bpy.data.objects.get(nm)
         if o:

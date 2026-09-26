@@ -342,6 +342,32 @@ def bind_rigid(obj, arm_obj, bone):
     obj.parent = arm_obj
 
 
+def bind_gear(obj, body, arm_obj, k=12, max_influences=4):
+    """Hard gear strapped to the body (pouch): one weight set for the whole
+    piece — the average of the skin weights under it — so it rides the hip
+    rigidly instead of bending with every skin vertex it touches."""
+    from scipy.spatial import cKDTree
+    bw = body.matrix_world
+    bco = np.array([(bw @ v.co)[:] for v in body.data.vertices])
+    gco = np.array([(obj.matrix_world @ v.co)[:] for v in obj.data.vertices])
+    _d, near = cKDTree(bco).query(gco, k=k)
+    acc = {}
+    names = {g.index: g.name for g in body.vertex_groups}
+    for i in np.unique(near.reshape(-1)):
+        for g in body.data.vertices[int(i)].groups:
+            acc[names[g.group]] = acc.get(names[g.group], 0.0) + g.weight
+    top = sorted(acc.items(), key=lambda kv: -kv[1])[:max_influences]
+    tot = sum(w for _, w in top) or 1.0
+    idx = list(range(len(obj.data.vertices)))
+    for nm, w in top:
+        g = obj.vertex_groups.get(nm) or obj.vertex_groups.new(name=nm)
+        g.add(idx, w / tot, "REPLACE")
+    m = obj.modifiers.new("Armature", "ARMATURE")
+    m.object = arm_obj
+    obj.parent = arm_obj
+    return {nm: round(w / tot, 3) for nm, w in top}
+
+
 def transfer_weights(src, dst, arm_obj):
     """LODs get their skin weights from LOD0 (Data Transfer, interpolated
     from the nearest face), then the same cleanup."""

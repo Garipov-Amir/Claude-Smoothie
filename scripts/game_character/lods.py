@@ -104,10 +104,13 @@ def mesh_report(obj):
         val = len(v.link_edges)
         if val != 4:
             poles[val] = poles.get(val, 0) + 1
+    pieces = int(components(bm).max()) + 1 if len(bm.faces) else 0
     bm.free()
+    own, other = self_intersections(obj)
     r = {
         "watertight": len(boundary) == 0 and len(nonman) == 0,
-        "self_intersecting_face_pairs": self_intersections(obj),
+        "self_intersecting_face_pairs": own,
+        "pieces": pieces, "piece_contact_face_pairs": other,
         "verts": len(me.vertices), "faces": len(me.polygons), "tris": int((sizes - 2).sum()),
         "quads": int((sizes == 4).sum()), "ngons": int((sizes > 4).sum()), "triangles": int((sizes == 3).sum()),
         "non_manifold_edges": len(nonman), "boundary_edges": len(boundary),
@@ -122,20 +125,39 @@ def mesh_report(obj):
     return r
 
 
+def components(bm):
+    """Connected-component id per face (mesh pieces: body, pouch, ...)."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    nv = len(bm.verts)
+    e = np.array([[ed.verts[0].index, ed.verts[1].index] for ed in bm.edges]).reshape(-1, 2)
+    g = coo_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(nv, nv))
+    _n, lab = connected_components(g, directed=False)
+    return np.array([lab[f.verts[0].index] for f in bm.faces])
+
+
 def self_intersections(obj):
     """Face pairs that cut through each other (sharing no vertex) — in a
-    render they show up as tears/holes where one surface pokes through."""
+    render they show up as tears/holes where one surface pokes through.
+    Returns (within one piece, between pieces): a piece passing through
+    itself is a defect; gear sitting on / sunk into the body it is strapped
+    to is how game gear is built and is only reported."""
     from mathutils.bvhtree import BVHTree
     bm = bmesh.new()
     bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
+    comp = components(bm)
     bvh = BVHTree.FromBMesh(bm)
-    n = 0
+    own = other = 0
     for a, b in bvh.overlap(bvh):
         if a < b and not ({v.index for v in bm.faces[a].verts} & {v.index for v in bm.faces[b].verts}):
-            n += 1
+            if comp[a] == comp[b]:
+                own += 1
+            else:
+                other += 1
     bm.free()
-    return n
+    return own, other
 
 
 def uv_report(obj, grid=1024):

@@ -39,19 +39,28 @@ def main(build, out, samples=64):
     os.makedirs(out, exist_ok=True)
     tmp = os.path.join(out, "_tmp")
     os.makedirs(tmp, exist_ok=True)
-    J = humanoid.skeleton()
+    _m, J = humanoid.build(clothing=False)
+    from landmarks import LM
+    head = (0.0, float(LM["eye_l"][1]) + 0.07, float(LM["eye_l"][2]) - 0.005)   # between the eyes, mid-skull
 
     # ---- high-poly clay ----
     import numpy as _np
     d = _np.load(os.path.join(build, "highpoly.npz"), allow_pickle=True)
     U.reset_scene()
     hp = U.mesh_from_arrays("HighPoly", d["verts"], d["faces"])
-    hp.data.shade_smooth()
-    U.set_material(hp, U.clay_material(color=(0.55, 0.53, 0.50)))
-    p = U.render_views(f"{tmp}/hp", [hp], views=("front", "3q", "left", "3q_back"), resolution=(600, 900),
+    hps = [hp]
+    pp = os.path.join(build, "highpoly_pouch.npz")
+    if os.path.exists(pp):
+        dp = _np.load(pp)
+        hps.append(U.mesh_from_arrays("HighPoly_Pouch", dp["verts"], dp["faces"]))
+    clay = U.clay_material(color=(0.55, 0.53, 0.50))
+    for o in hps:
+        o.data.shade_smooth()
+        U.set_material(o, clay)
+    p = U.render_views(f"{tmp}/hp", hps, views=("front", "3q", "left", "3q_back"), resolution=(600, 900),
                        samples=samples // 2, ortho=False)
-    p += U.render_views(f"{tmp}/hph", [hp], views=("front", "3q"), resolution=(600, 900), samples=samples // 2,
-                        focus=((0, -0.01, 1.68), 0.30), ortho=False)
+    p += U.render_views(f"{tmp}/hph", hps, views=("front", "3q"), resolution=(600, 900), samples=samples // 2,
+                        focus=(head, 0.30), ortho=False)
     U.contact_sheet(p, os.path.join(out, "highpoly.png"))
 
     # ---- final asset ----
@@ -66,7 +75,7 @@ def main(build, out, samples=64):
                        resolution=(600, 900), samples=samples, ortho=False)
     U.contact_sheet(p, os.path.join(out, "beauty.png"))
     p = U.render_views(f"{tmp}/head", [L[0], E[0]], views=("front", "3q", "left"), resolution=(700, 800),
-                       samples=samples, focus=((0, -0.01, 1.685), 0.27), ortho=False)
+                       samples=samples, focus=(head, 0.27), ortho=False)
     U.contact_sheet(p, os.path.join(out, "head.png"))
 
     # ---- topology (quad source + real edges) ----
@@ -80,7 +89,7 @@ def main(build, out, samples=64):
     c_hand = tuple(J["hand_l"] + J["_hand_axis_l"] * 0.07)
     p = U.render_views(f"{tmp}/topo_body", [q], views=("3q",), resolution=(600, 900), samples=16, ortho=False)
     p += U.render_views(f"{tmp}/topo_head", [q], views=("3q",), resolution=(600, 900), samples=16,
-                        focus=((0, -0.01, 1.68), 0.30), ortho=False)
+                        focus=(head, 0.30), ortho=False)
     p += U.render_views(f"{tmp}/topo_hand", [q], views=("left",), resolution=(600, 900), samples=16,
                         focus=(c_hand, 0.22), ortho=False)
     U.contact_sheet(p, os.path.join(out, "topology.png"))
