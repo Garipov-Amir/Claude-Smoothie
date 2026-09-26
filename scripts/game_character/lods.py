@@ -55,13 +55,53 @@ def protect_group(obj, name="LOD_protect", strength=0.85):
     return g
 
 
-def decimated(src, name, ratio):
+def decimated(src, name, ratio, tries=4, log=print):
+    """Collapse-decimated copy of src. A collapse can fold a narrow crease
+    (the gluteal cleft, the crotch) into itself, so the result is checked for
+    self-intersections; the source region around any crossing is frozen and
+    the decimation redone (a handful of frozen vertices, not the whole LOD)."""
+    from scipy.spatial import cKDTree
+    src_co = U.verts_np(src)
+    freeze = np.zeros(len(src_co), dtype=bool)
+    for attempt in range(tries):
+        o = _decimate_once(src, name, ratio, freeze)
+        vi, npairs = _crossing_verts(o)
+        if npairs == 0:
+            return o
+        near = cKDTree(src_co).query_ball_point(U.verts_np(o)[vi], r=0.02)
+        freeze[np.unique(np.concatenate([np.asarray(n, dtype=np.int64) for n in near]))] = True
+        log(f"{name}: {npairs} crossing face pairs after decimation, freezing {int(freeze.sum())} source verts")
+        if attempt < tries - 1:
+            bpy.data.objects.remove(o, do_unlink=True)
+    return o
+
+
+def _crossing_verts(obj):
+    from mathutils.bvhtree import BVHTree
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.faces.ensure_lookup_table()
+    comp = components(bm)
+    t = BVHTree.FromBMesh(bm)
+    out, n = set(), 0
+    for a, b in t.overlap(t):
+        va, vb = {v.index for v in bm.faces[a].verts}, {v.index for v in bm.faces[b].verts}
+        if a < b and comp[a] == comp[b] and not (va & vb):
+            out |= va | vb
+            n += 1
+    bm.free()
+    return np.array(sorted(out), dtype=np.int64), n
+
+
+def _decimate_once(src, name, ratio, freeze):
     o = U.duplicate(src, name)
     for m in list(o.modifiers):
         o.modifiers.remove(m)
     for g in list(o.vertex_groups):
         o.vertex_groups.remove(g)
-    protect_group(o)
+    g = protect_group(o)
+    if freeze.any():   # full weight = never collapsed (see protect_group)
+        g.add(np.nonzero(freeze)[0].tolist(), 1.0, "REPLACE")
     d = o.modifiers.new("Decimate", "DECIMATE")
     d.decimate_type = "COLLAPSE"
     d.ratio = ratio
