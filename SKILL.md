@@ -1,6 +1,6 @@
 ---
 name: blender-stylized-3d
-description: Generate 3D models in Blender from a text description or a reference photo — stylized hand-painted-PBR props/creatures (Workflows A/B), or a full game-ready realistic character (Workflow C: SDF sculpt, designed quad retopology, UVs, high→low normal/AO/curvature bakes, PBR texture set, UE-compatible skeleton + skinning + walk cycle, LOD0–LOD4, FBX/GLB export with a validation report). Use when the user asks to create, model, texture, rig or export a 3D asset/character, "make a 3D model of X", "turn this photo into a 3D model", or wants a .blend/.fbx/.glb.
+description: Generate 3D models in Blender from a text description or a reference photo — stylized hand-painted-PBR props/creatures (Workflows A/B), or a full game-ready realistic character (Workflow C: SDF sculpt on an anatomical reference body, wrapped base-mesh retopology, UVs, high→low normal/AO/curvature bakes, PBR texture set, UE-compatible skeleton + skinning + walk cycle, LOD0–LOD4, FBX/GLB export with a validation report). Use when the user asks to create, model, texture, rig or export a 3D asset/character, "make a 3D model of X", "turn this photo into a 3D model", or wants a .blend/.fbx/.glb.
 ---
 
 # Blender stylized 3D generation
@@ -27,9 +27,10 @@ tint, and noise-driven color/roughness variation — no image textures required.
 assets — correct silhouette/proportions, clean continuous topology,
 procedural materials. For a *game-ready character* use **Workflow C**
 below: it runs the full production chain (sculpt → retopo → UV → bake →
-texture → rig → LOD → export) and passes engine-readiness checks, but the
-sculpt is primitive-based, so faces read stylized-realistic rather than as a
-portrait-level sculpt by a human artist. Say so; don't oversell.
+texture → rig → LOD → export) and passes engine-readiness checks. Anatomy
+comes from a CC0 reference body and the topology from a wrapped base mesh,
+so proportions and edge flow are right; likeness/personality, hair cards
+and facial rigging are still an artist's job. Say so; don't oversell.
 
 ## Prerequisites
 
@@ -190,21 +191,26 @@ python scripts/game_character/verify_export.py <out>/export/SK_Character.glb
 cat <out>/export/report.json                                          # validation numbers
 ```
 
-Stages (each re-runnable with `--from <stage>`): `highpoly` (SDF sculpt,
-4.3 M tris) → `lowpoly` (designed quad cage + LOD2/LOD0 subdivisions, UVs)
-→ `bake` (normal/AO/curvature/position) → `textures` (BaseColor, Normal
-GL/DX, ORM, Height) → `lookdev` (engine-style material, eyes) → `rig`
-(63-bone UE-named skeleton, heat skinning, walk cycle) → `export`
-(LOD0–4, FBX per engine, GLB, `report.json`).
+Stages (each re-runnable with `--from <stage>`): `highpoly` (SDF sculpt
+on an anatomical CC0 reference body, clothing/hair/gear on top, 4.3 M tris)
+→ `lowpoly` (a clean base topology *wrapped* onto the sculpt — booted
+variant when the costume has boots — plus gear pieces, UVs, LOD2/LOD4)
+→ `bake` (per piece: normal/AO/curvature/position, merged in one atlas)
+→ `textures` (BaseColor, Normal GL/DX, ORM, Height) → `lookdev`
+(engine-style material, eyes) → `rig` (63-bone UE-named skeleton, heat
+skinning, rigid gear, walk cycle) → `export` (LOD0–4, FBX per engine, GLB,
+`report.json` incl. watertightness and self-intersections per piece).
 
-To make a *different* character, edit the data, not the pipeline:
-proportions/anatomy in `humanoid.py` (`skeleton()`, `build_body`,
-`HEAD_PROFILE`), outfit in `costume.py` (garment masks + `region_id` +
-`dress`), materials in `texture.py` (recipes per region). The retopo rows
-(`retopo.TRUNK_ROWS`, limb rows) should sit on hems and joints of the new
-design. Always look at: the clay sheet of the high-poly, the true-edge
-wireframe close-ups (head, hands, crotch, shoulder), the checker render,
-the textured turnaround, the walk frames + stress poses, and the report.
+To make a *different* character, edit the data, not the pipeline: body
+shape via the reference's morph targets (`reference_body.build`: muscle,
+stature) or the procedural body (`humanoid.build(body="procedural")`),
+outfit in `costume.py` (garment masks + `region_id` + `dress`), materials in
+`texture.py` (recipes per region). Everything positional keys off the
+landmarks (`landmarks.py`), not coordinates. Always look at: the clay sheet
+of the high-poly, the true-edge wireframe close-ups (head, hands, feet,
+crotch, shoulder) **with self-intersecting faces highlighted**, the textured
+turnaround, the walk frames + stress poses, and the report
+(`watertight: true`, `self_intersecting_face_pairs: 0` on every LOD).
 
 ## Style toolkit
 
