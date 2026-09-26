@@ -42,8 +42,8 @@ positive weight of the stem you want (`nose-scale-horiz-incr: 0.5`, not
 `nose-scale-horiz-decr: -0.5`). List them:
 
 ```bash
-python scripts/game_character/list_modifiers.py            # all ~250
-python scripts/game_character/list_modifiers.py ear nose   # filtered
+python scripts/game_character/list_modifiers.py            # all ~340
+python scripts/game_character/list_modifiers.py ear nose   # every ear or nose modifier
 ```
 
 Groups: head, forehead, eyebrows, neck, eyes, nose, mouth, ears, chin,
@@ -66,6 +66,12 @@ Useful ones:
 | thick neck | `neck-scale-horiz-incr`, `neck-scale-depth-incr` |
 
 Keep modifiers within ±1; stacking many at 1.0 can fold the base mesh.
+
+Under a shirt or vest the nipples are flattened automatically
+(`nipple-point-decr: 1`, `nipple-size-decr: 1` are added unless the spec
+sets them) — garments are fitted shells over the skin, and game characters
+are built this way. Breast shape: `breast-dist-*`, `breast-point-*`,
+`breast-trans-*`, `breast-volume-vert-*`.
 
 ## skin, eyes
 

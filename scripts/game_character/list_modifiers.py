@@ -15,7 +15,7 @@ if __name__ == "__main__":
     import reference_body as RB
     idx = RB.modifier_index(humanoid.REF_CACHE)
     words = [a for a in sys.argv[1:] if a != "--"]
-    keys = sorted(k for k in idx if all(w in k for w in words))
+    keys = sorted(k for k in idx if not words or any(w in k for w in words))
     groups = {}
     for k in keys:
         groups.setdefault(idx[k][0].split("/")[1], []).append(k)

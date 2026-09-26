@@ -177,7 +177,7 @@ def modifier_index(cache):
     idx = {}
     for g in groups:
         grp = g["group"]
-        if grp.startswith("macrodetails") or grp in ("breast", "genitals"):
+        if grp.startswith("macrodetails") or grp == "genitals":
             continue
         for m in g["modifiers"]:
             t = m.get("target")
