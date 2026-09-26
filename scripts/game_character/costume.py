@@ -270,6 +270,9 @@ def trousers(m, J, g):
         knee = np.exp(-((t - 0.50) / 0.08) ** 2) * (0.3 + 0.7 * np.maximum(-np.cos(th), 0.0))
         stack = smoothstep(0.62, 0.72, t) if g["length"] == "full" else 0.0
         folds = leg * (0.0006 + 0.0022 * knee + 0.0020 * stack) * rid * 2.0 + 0.0014 * drape * leg
+        fw = GEAR.get("footwear")
+        if fw:   # no fold relief inside a boot: it would print through the leather
+            folds = folds * smoothstep(fw["top_z"] - 0.012, fw["top_z"] + 0.006, z)
         crotch = np.exp(-((z - (cz - 0.035 * sb)) / (0.05 * sb)) ** 2) * smoothstep(0.09 * sb, 0.03 * sb, Q[..., 0])
         folds += 0.0010 * crotch * ridged(P * np.array([30, 12, 60], np.float32), 1.0, 1, seed=25)
         return f - mask * (ease + folds)
@@ -390,7 +393,6 @@ def footwear(m, J, g):
     enough for the calf and the trousers), heel counter, instep and toe box
     scaled by the foot, a sole outlined from forefoot + heel ellipses, welt
     cuff and ankle creases."""
-    from landmarks import leg_radius
     A, B = np.asarray(J["foot_l"], np.float32), np.asarray(J["ball_l"], np.float32)
     sf, sb = LM["s_foot"], LM["s_body"]
     boots = g["type"] == "boots"
@@ -398,14 +400,17 @@ def footwear(m, J, g):
     GEAR["footwear"] = {"top_z": top, "type": g["type"]}
     parts = []
     if boots:
-        H, K = np.asarray(J["thigh_l"], np.float32), np.asarray(J["calf_l"], np.float32)
-        axis = lambda z: np.array([np.interp(z, [A[2], K[2], H[2]], [A[i], K[i], H[i]]) for i in (0, 1)] + [z], np.float32)
-        zs = np.linspace(A[2] + 0.03 * sf, top, 12)
-        r_leg = max(leg_radius(LM, float(z)) for z in zs)
-        shaft_top = axis(top) + np.array([-0.002 * sb, -0.012 * sb, 0], np.float32)
-        r_top = r_leg + 0.0105
-        r_bot = max(leg_radius(LM, float(A[2]) + 0.04 * sf) + 0.008, 0.80 * r_top)
-        parts.append((RoundCone(shaft_top, A + np.array([0, 0.004 * sf, 0.01 * sf], np.float32), r_top, r_bot), 0.0))
+        # the shaft: an offset shell of the leg (over the trousers) below the
+        # top, a touch looser toward the top like stiff leather
+        def shaft(P, f):
+            Q = abs_x(P)
+            z = Q[..., 2]
+            m_ = (1.0 - smoothstep(top - 0.0015, top + 0.0015, z)) * smoothstep(float(A[2]) - 0.01, float(A[2]) + 0.02, z)
+            loose = 0.0085 + 0.0035 * smoothstep(float(A[2]) + 0.05 * sf, top, z)
+            # folded cuff: a thicker rolled band just under the top edge
+            cuff = 0.0045 * np.exp(-((z - (top - 0.011 * sb)) / (0.0065 * sb)) ** 2)
+            return f - m_ * (loose + cuff) * not_hands(Q, J)
+        m.edit(shaft, *body_box(float(A[2]) - 0.02, top + 0.01))
     parts.append((Ellipsoid(A + np.array([0, 0.030, -0.030], np.float32) * sf, tuple(np.array([0.044, 0.052, 0.060]) * sf)), 0.03 * sf))
     parts.append((RoundCone(A + np.array([0, -0.010, -0.010], np.float32) * sf, B + np.array([0, 0, 0.022], np.float32) * sf,
                             0.044 * sf, 0.032 * sf), 0.03 * sf))
@@ -426,9 +431,6 @@ def footwear(m, J, g):
 
     m.add(Custom(sole_fn, (Ax - 0.08 * sf, By - 0.16 * sf, -0.005), (Ax + 0.08 * sf, Ay + 0.12 * sf, 0.035 * sf)), k=0.003, sym=True)
     if boots:
-        # folded cuff at the top of the shaft
-        m.add(Torus(shaft_top + np.array([0, 0, -0.012 * sb], np.float32), r_top, 0.007 * sb, tube_scale=(0.9, 1.6)), k=0.003, sym=True)
-
         # ankle creases: horizontal wrinkles across the shaft front
         def fn(P, f):
             Q = abs_x(P)
@@ -604,7 +606,9 @@ def beard_mask(P):
     zbot = np.interp(phi, [0.0, 0.5, 1.0, 1.35, 1.6],
                      [LM["chin_z"] - 0.030 * sh, LM["chin_z"] - 0.024 * sh, float(ST[2]) - 0.045 * sh,
                       float(EAR[2]) - 0.030 * sh, float(EAR[2]) - 0.020 * sh])
-    band = smoothstep(zbot - 0.004 * sh, zbot + 0.006 * sh, z) * (1.0 - smoothstep(ztop - 0.006 * sh, ztop + 0.002 * sh, z))
+    # feathered like a hairline: density builds up over ~1.5 cm below the
+    # cheek line instead of a hard ledge (a ledge reads as a chin strap)
+    band = smoothstep(zbot - 0.006 * sh, zbot + 0.010 * sh, z) * (1.0 - smoothstep(ztop - 0.016 * sh, ztop + 0.002 * sh, z)) ** 1.5
     front = smoothstep(1.75, 1.55, phi)
     lips = np.exp(-(((P[..., 0]) / (0.028 * sh)) ** 2 + ((z - float(ST[2])) / (0.007 * sh)) ** 2))
     near = np.linalg.norm(d, axis=-1) < 0.15 * sh
@@ -615,10 +619,10 @@ def beard(m, J, b):
     if b["style"] not in ("short", "long"):
         return
     sh = LM["s_head"]
-    thick = 0.0075 * sh
+    thick = 0.0060 * sh
 
     def fn(P, f):
-        clumps = 0.0016 * sh * fbm(P * np.array([1.0, 1.0, 0.3], np.float32), 150.0 / sh, 3, seed=61)
+        clumps = 0.0018 * sh * fbm(P * np.array([1.0, 1.0, 0.3], np.float32), 150.0 / sh, 3, seed=61)
         return f - beard_mask(P) * (thick + clumps)
 
     c = head_c()
@@ -639,6 +643,9 @@ def dress(m, J, S, hair_on=True):
     (pouch, long hair, horns, ...) are built by pieces.py."""
     GEAR.clear()
     REGIONS.clear()
+    fw = next((g for g in S["outfit"] if g["type"] in ("boots", "shoes")), None)
+    if fw:   # garments under the boot need to know where it ends
+        GEAR["footwear"] = {"top_z": footwear_top(J, fw), "type": fw["type"]}
     order = list(ORDER)
     shirt_g = next((g for g in S["outfit"] if g["type"] == "shirt"), None)
     if shirt_g and shirt_g["tuck"] == "out":           # an untucked shirt goes over the trousers

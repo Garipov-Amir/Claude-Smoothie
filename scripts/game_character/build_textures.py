@@ -14,9 +14,11 @@ import texture
 
 def main(out_dir, res=2048, name="T_Character"):
     t = time.time()
+    import spec as SP
     maps = dict(np.load(os.path.join(out_dir, f"bakes_{res}.npz")))
-    model, J = humanoid.build()   # also seats the gear, which region_id needs
-    tex = texture.author(maps, J, log=lambda s: print(f"[{time.time() - t:6.1f}s] {s}", flush=True))
+    S = SP.from_out(out_dir)
+    model, J = humanoid.build(S)   # also seats garments and gear, which region_id needs
+    tex = texture.author(maps, J, S, log=lambda s: print(f"[{time.time() - t:6.1f}s] {s}", flush=True))
     td = os.path.join(out_dir, "textures")
     os.makedirs(td, exist_ok=True)
     texture.save_png(tex["basecolor"], os.path.join(td, f"{name}_BaseColor.png"))
@@ -31,7 +33,7 @@ def main(out_dir, res=2048, name="T_Character"):
     texture.save_png(sss, os.path.join(td, f"{name}_SkinMask.png"))
     # eyes
     import eyes
-    texture.save_png(eyes.eye_texture(512), os.path.join(td, "T_Eye_BaseColor.png"))
+    texture.save_png(eyes.eye_texture(512, iris_color=tuple(SP.color(S["eyes"]["iris"]))), os.path.join(td, "T_Eye_BaseColor.png"))
     print(f"[{time.time() - t:6.1f}s] textures written to {td}", flush=True)
 
 

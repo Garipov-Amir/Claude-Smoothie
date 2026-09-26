@@ -172,8 +172,8 @@ def beard_long(m, J, p, beard_color):
     chin_z = float(LM["chin_z"])
     L = float(p["length"]) * sh
     zs = [float(pog[2]) + 0.006 * sh, chin_z - 0.004 * sh, chin_z - 0.35 * L, chin_z - 0.7 * L, chin_z - L]
-    rx = np.array([0.042, 0.044, 0.036, 0.024, 0.010]) * sh
-    ry = np.array([0.020, 0.026, 0.022, 0.016, 0.008]) * sh
+    rx = np.array([0.050, 0.054, 0.050, 0.040, 0.022]) * sh
+    ry = np.array([0.022, 0.028, 0.026, 0.020, 0.012]) * sh
     pm = SDFModel()
     cs = []
     for i, z in enumerate(zs):
@@ -270,11 +270,15 @@ def pauldrons(m, J, p):
     mat = {"material": p["material"], "color": p["color"], "metal": p.get("metal", "iron")}
     for side in sides:
         S = np.asarray(J["upperarm_l"], np.float32) * np.array([side, 1, 1], np.float32)
-        a = normalize(np.array([side * 0.55, 0.0, 1.0], np.float32))
-        cc = S + np.array([side * 0.004, 0, -0.012], np.float32) * s
+        E = np.asarray(J["lowerarm_l"], np.float32) * np.array([side, 1, 1], np.float32)
+        arm = normalize(E - S)
+        # dome axis: perpendicular to the upper arm, outward-and-up (the
+        # deltoid's outer face), tipped a little further up
+        a = normalize(normalize(np.cross(arm, [0, side, 0])) + np.array([0, 0, 0.3]))
+        cc = S + arm * 0.030 * s
         # cap directions within ~70 deg of the axis
         dirs = []
-        for th in np.radians([0, 25, 50, 70]):
+        for th in np.radians([0, 20, 40, 55]):
             for ph in np.radians(np.arange(0, 360, 30)):
                 u = normalize(np.cross(a, [0, 1, 0]))
                 v = np.cross(a, u)
@@ -286,13 +290,13 @@ def pauldrons(m, J, p):
                 R_in = float(R)
                 break
         t = 0.005
-        rim_cos = math.cos(math.radians(72))
+        rim_cos = math.cos(math.radians(58))
 
         def dome(P, cc=cc, a=a, R_in=R_in):
             d = P - cc
             r = np.linalg.norm(d, axis=-1)
             shell = np.abs(r - (R_in + t / 2)) - t / 2
-            cut = rim_cos * r - (d @ a)                   # keep the cap: angle to the axis < 72 deg
+            cut = rim_cos * r - (d @ a)                   # keep the cap: angle to the axis < 58 deg
             return np.maximum(shell, cut)
         pm = SDFModel()
         lo, hi = cc - (R_in + 0.03), cc + (R_in + 0.03)
