@@ -111,9 +111,14 @@ def from_reference(ref, J):
     L["stomion"] = _v(0, pl[k], zl[k])
     L["upper_lip"] = _v(0, pl[max(a, b)], zl[max(a, b)])
     L["lower_lip"] = _v(0, pl[min(a, b)], zl[min(a, b)])
-    chin_band = mid[(mid[:, 2] < L["stomion"][2] - 0.02) & (mid[:, 1] < eye[1] + 0.03)]
+    # chin: the front of the jaw 2-10 cm under the mouth (bounded below and
+    # behind — unbounded, "the lowest midline point in front" is the groin)
+    st = L["stomion"]
+    chin_band = mid[(mid[:, 2] < st[2] - 0.02) & (mid[:, 2] > st[2] - 0.10) & (mid[:, 1] < st[1] + 0.05)]
     L["chin"] = chin_band[np.argmin(chin_band[:, 2])]
     L["pogonion"] = chin_band[np.argmin(chin_band[:, 1])]
+    drop = float(st[2] - L["chin"][2])
+    assert 0.03 < drop < 0.095, f"chin {drop * 100:.1f} cm under the stomion: landmark search failed"
     # ears: lateral-most head point near eye height, behind the eyes
     head = P[(P[:, 2] > eye[2] - 0.05) & (P[:, 2] < eye[2] + 0.02) & (P[:, 1] > eye[1] + 0.04) & (P[:, 0] > 0)]
     e = head[np.argmax(head[:, 0])]
