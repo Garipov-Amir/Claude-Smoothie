@@ -9,8 +9,10 @@ and brings it into this pipeline's space (Blender axes, meters, same
 stature), so the SDF sculpt can be compared with it: overlaid silhouettes,
 cross-section differences, landmark checks.
 
-It is used as *reference only*: the sculpt, topology, UVs, textures and rig
-stay this pipeline's own work.
+The sculpt is built on its limit surface; wrap.py also uses its quad
+topology as the base mesh that gets wrapped onto the finished sculpt (the
+studio "base mesh" workflow). Sculpted clothing, UV layout and packing,
+bakes, textures, rig and LODs stay this pipeline's own work.
 
 Files are fetched once into a cache directory:
     base.obj, caucasian-male-young.target,
@@ -66,6 +68,21 @@ def load_obj_body(path):
             elif line.startswith("f ") and grp == "body":
                 F.append([int(t.split("/")[0]) - 1 for t in line.split()[1:]])
     return np.array(V, dtype=np.float64), F
+
+
+def load_body_uv(path):
+    """UV coordinates of the 'body' group: (vt array, per-face vt indices),
+    faces in the same order as load_obj_body / load_obj_groups()['body']."""
+    VT, FT, grp = [], [], None
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("vt "):
+                VT.append([float(x) for x in line.split()[1:3]])
+            elif line.startswith("g "):
+                grp = line.split()[1]
+            elif line.startswith("f ") and grp == "body":
+                FT.append([int(t.split("/")[1]) - 1 for t in line.split()[1:]])
+    return np.array(VT, dtype=np.float64), FT
 
 
 def load_target(path):
@@ -181,15 +198,26 @@ class MeshSDF:
         self.lo = self.p.min(0) - 0.002
         self.hi = self.p.max(0) + 0.002
         # coarse inside/outside grid: the sign for points far from the surface,
-        # so the fine queries can stop at FAR (much faster KD searches)
+        # so the fine queries can stop at FAR (much faster KD searches).
+        # Cells near the surface take the sign of their nearest sample; the
+        # far cells connected to the grid border are outside, every other
+        # far cell is enclosed by the body (a flood fill, no long KD searches)
+        from scipy import ndimage
         self.c = coarse
         self.g0 = self.lo - 2 * coarse
-        shape = np.ceil((self.hi - self.g0) / coarse).astype(int) + 3
+        shape = tuple(np.ceil((self.hi - self.g0) / coarse).astype(int) + 3)
         axes = [self.g0[d] + coarse * np.arange(shape[d]) for d in range(3)]
         G = np.stack(np.meshgrid(*axes, indexing="ij"), -1).reshape(-1, 3).astype(np.float32)
-        _d, i = self.tree.query(G, workers=-1)
-        inside = np.einsum("ij,ij->i", G - self.p[i], self.n[i]) < 0
-        self.occ = inside.reshape(tuple(shape))
+        dist, i = self.tree.query(G, distance_upper_bound=2.0 * coarse, workers=-1)
+        near = np.isfinite(dist)
+        inside = np.zeros(len(G), dtype=bool)
+        inside[near] = np.einsum("ij,ij->i", G[near] - self.p[i[near]], self.n[i[near]]) < 0
+        far = (~near).reshape(shape)
+        lab, _n = ndimage.label(far)
+        border = np.unique(np.concatenate([lab[0].ravel(), lab[-1].ravel(), lab[:, 0].ravel(),
+                                           lab[:, -1].ravel(), lab[:, :, 0].ravel(), lab[:, :, -1].ravel()]))
+        enclosed = far & ~np.isin(lab, border[border > 0])
+        self.occ = inside.reshape(shape) | enclosed
 
     def bbox(self):
         return self.lo, self.hi

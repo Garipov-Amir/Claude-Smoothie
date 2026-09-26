@@ -33,7 +33,14 @@ def main(out_dir, render=True):
         hp_pouch = U.mesh_from_arrays("HighPoly_Pouch", d["verts"], d["faces"])
         hp_pouch.data.shade_smooth()
     print(f"[{time.time() - t:.1f}s] highpoly loaded", flush=True)
-    C, lod4, lod2, lod0 = retopo.build_lods(J, hp, hp_pouch=hp_pouch)
+    from landmarks import LM
+    if LM.get("body") == "reference":
+        # the sculpt sits on the reference's limit surface: wrap its base topology
+        import wrap
+        C, lod4, lod2, lod0 = wrap.build_lods(J, hp, humanoid.REF_CACHE, hp_pouch=hp_pouch,
+                                              log=lambda s: print(f"[{time.time() - t:.1f}s] {s}", flush=True))
+    else:
+        C, lod4, lod2, lod0 = retopo.build_lods(J, hp, hp_pouch=hp_pouch)
     for o in (lod4, lod2, lod0):
         print(f"[{time.time() - t:.1f}s] {o.name}: {len(o.data.polygons)} faces, {U.tri_count(o)} tris", flush=True)
     import uvs

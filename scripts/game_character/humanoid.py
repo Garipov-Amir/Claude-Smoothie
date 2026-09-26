@@ -499,6 +499,7 @@ def build(arm_angle=45.0, clothing=True, hair=True, body="reference"):
         build_body(m, J)
         LM.update(landmarks.procedural_defaults(J))
     LM["J"] = J
+    LM["body"] = body
     if clothing:
         import costume
         costume.dress(m, J, hair_on=hair)

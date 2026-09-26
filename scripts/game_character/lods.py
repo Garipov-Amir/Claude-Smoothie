@@ -33,8 +33,11 @@ def triangulate(obj):
         bpy.ops.object.modifier_apply(modifier=m.name)
 
 
-def protect_group(obj, name="LOD_protect"):
-    """Weights that slow decimation down: head/face and hands."""
+def protect_group(obj, name="LOD_protect", strength=0.85):
+    """Weights that slow decimation down: head/face and hands. Capped below
+    1: Blender's collapse decimator never touches a vertex whose (inverted)
+    weight is 0, so full protection would freeze the face and hands and a
+    dense base mesh could never reach its LOD budget."""
     g = obj.vertex_groups.get(name) or obj.vertex_groups.new(name=name)
     from landmarks import LM
     co = U.verts_np(obj)
@@ -46,7 +49,7 @@ def protect_group(obj, name="LOD_protect"):
         h[0] *= side
         d = np.linalg.norm(co - (h + np.array(J["_hand_axis_l"]) * np.array([side, 1, 1]) * 0.06), axis=1)
         w = np.maximum(w, np.clip((0.13 - d) / 0.04, 0, 1))                               # hands
-    for i, wi in enumerate(w):
+    for i, wi in enumerate(w * strength):
         if wi > 0:
             g.add([i], float(wi), "REPLACE")
     return g
