@@ -67,11 +67,12 @@ Useful ones:
 
 Keep modifiers within ±1; stacking many at 1.0 can fold the base mesh.
 
-Under a shirt or vest the nipples are flattened automatically
-(`nipple-point-decr: 1`, `nipple-size-decr: 1` are added unless the spec
-sets them) — garments are fitted shells over the skin, and game characters
-are built this way. Breast shape: `breast-dist-*`, `breast-point-*`,
-`breast-trans-*`, `breast-volume-vert-*`.
+`nipple-flatten` (0..1) is the pipeline's own modifier: nipples and areolae
+are replaced by the smooth continuation of the chest. It is added
+automatically (at 1) under a shirt or vest unless the spec sets it —
+garments are fitted shells over the skin, and game characters are built
+this way. Breast shape: `breast-dist-*`, `breast-point-*`, `breast-trans-*`,
+`breast-volume-vert-*`.
 
 ## skin, eyes
 
