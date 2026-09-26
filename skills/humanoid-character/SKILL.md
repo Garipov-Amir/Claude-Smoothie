@@ -16,9 +16,11 @@ One command turns it into a production asset:
 <out>/textures/T_Character_*.png       BaseColor, Normal_OpenGL/_DirectX, ORM, Height, SkinMask; T_Eye_BaseColor
 ```
 
-The code lives in this repository: `REPO/scripts/game_character/` where
-`REPO` is two directories above this file (`skills/humanoid-character/` →
-repo root). Technique details: `REPO/reference/game_ready_character.md`.
+The code lives in this repository: `REPO/scripts/game_character/`, where
+`REPO` is the repository root (this skill's real folder is
+`REPO/skills/humanoid-character/`; if it was reached through a symlink such
+as `.claude/skills/humanoid-character`, resolve it with `realpath`).
+Technique details: `REPO/reference/game_ready_character.md`.
 Spec fields: [`reference/spec.md`](reference/spec.md).
 
 ## Setup (once per machine)
@@ -53,6 +55,19 @@ detail — choose sensible values and say what you chose:
 - **Pieces**: ponytail/bun, long beard, horns, tusks, pauldrons, pouch.
 - **Things outside the library** (see Limits): pick the closest supported
   option, and tell the user what was substituted.
+
+**From a reference image**: Read it and write down what it shows before
+mapping — apparent sex, age, build (thin/average/heavy, muscular), height
+cues, face features (nose, jaw, ears), hair style and color, each visible
+garment (sleeve length, neckline, trouser length, footwear height), gear.
+Sample colors instead of guessing names:
+
+```bash
+python -c "from PIL import Image; im=Image.open('ref.png').convert('RGB'); print('#%02x%02x%02x' % im.getpixel((X, Y)))"
+```
+
+(pick pixels in lit, mid-tone areas — not highlights or shadows). Then
+preview and compare side by side with the image.
 
 Validate early — errors name the field and the allowed values:
 

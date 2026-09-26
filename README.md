@@ -21,7 +21,7 @@ API, no neural image-to-3D reconstruction.
   silhouette mask using classic image processing (system Python, Pillow).
 - **`scripts/run_blender.sh`** — runs a generation script headless (Blender binary, or the `bpy` pip module).
 - **`scripts/game_character/`** — the game-ready character pipeline (Workflow C); entry point `build_character.py --spec <spec|preset>`.
-- **[`skills/humanoid-character/`](skills/humanoid-character/SKILL.md)** — a second skill: any humanoid character (human or fantasy race) from a JSON spec — body sliders, outfit, pieces, colors — to FBX/GLB. Link it into `.claude/skills/humanoid-character` the same way as this folder.
+- **[`skills/humanoid-character/`](skills/humanoid-character/SKILL.md)** — a second skill: any humanoid character (human or fantasy race) from a JSON spec — body sliders, outfit, pieces, colors — to FBX/GLB. Already linked as `.claude/skills/humanoid-character` in this repo; link it into another project's `.claude/skills/` the same way as this folder.
 - **`mcp_server/`** — optional connector to drive a *live*, visible Blender
   session instead of headless batch runs. See `mcp_server/README.md`.
 
