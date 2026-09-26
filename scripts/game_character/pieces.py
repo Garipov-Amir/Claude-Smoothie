@@ -309,8 +309,8 @@ def pauldrons(m, J, p):
         for ang in (-0.6, 0.0, 0.6):
             dd = normalize(math.cos(0.5) * a + math.sin(0.5) * (math.cos(ang) * u + math.sin(ang) * np.cross(a, u)))
             pm.add(Ellipsoid(cc + dd * (R_in + t), (0.004, 0.004, 0.004)), k=0.001)
-        _add("Pauldron_L" if side > 0 else "Pauldron_R", "pauldrons", pm, lo, hi, "skin", mat, faces=420,
-             anchor="all")
+        _add("Pauldron_L" if side > 0 else "Pauldron_R", "pauldrons", pm, lo, hi, "skin", mat, lowpoly="dome",
+             frame=(cc, a, R_in, t, math.acos(rim_cos)), anchor="all")
 
 
 def build(m, J, S):

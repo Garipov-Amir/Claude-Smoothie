@@ -378,8 +378,9 @@ def boot_feet(obj, J, log=print):
 
 def max_offsets(P):
     """How far the sculpted surface may stand off the body, per vertex, from
-    the same region masks that sculpted the costume: bare skin ~0 (a longer
-    ray went through a lip or an eyelid), garments up to ~2.5 cm, hair ~4 cm."""
+    the same region masks that sculpted the costume: bare skin 0 (it is the
+    template's own limit surface; a ray from a lip crease passes through the
+    closed lips), garments up to ~2.5 cm, hair ~4 cm."""
     import costume
     if not costume.REGIONS:              # nothing sculpted on this body
         return np.full(len(P), 0.004)
@@ -387,7 +388,7 @@ def max_offsets(P):
     kinds = np.array([costume.region_kind(r) for r in range(len(costume.region_names()))])
     k = kinds[rid]
     dm = np.full(len(P), 0.028)
-    dm[k == "skin"] = 0.004
+    dm[k == "skin"] = 0.0          # bare skin *is* the template's limit surface: no ray
     dm[k == "hair"] = 0.045 * LM.get("s_head", 1.0)
     return dm
 
@@ -398,10 +399,10 @@ def outer_offsets(P, N, bvh, inner, dmax, start=0.004):
     d = np.zeros(len(P))
     ok = np.zeros(len(P), dtype=bool)
     for i, (p, n) in enumerate(zip(P, N)):
-        if inner[i]:
-            ok[i] = True             # socket / mouth bag: stays on the body
-            continue
         dmax_i = dmax[i]
+        if inner[i] or dmax_i <= 0.0:
+            ok[i] = True             # socket / mouth bag / bare skin: stays on the body
+            continue
         hit, hn, _f, dist = bvh.ray_cast(Vector(p - n * start), Vector(n), dmax_i + start)
         if hit is None or Vector(n).dot(hn) < 0.2:
             continue
@@ -515,6 +516,12 @@ def wrap(obj, hp, log=print, repair_rounds=0):
     nb = neighbours(me)
     dmax = max_offsets(P)
     d, ok = outer_offsets(P, N, bvh, inner, dmax)
+    # lids and lips (two rings around the sockets and the mouth bag) stay on
+    # the template's limit surface: rays from a lip crease pass through the
+    # closed lips of the sculpt and would push one lip into the other
+    keep = dilate(inner, nb, rings=2)
+    d[keep] = 0.0
+    ok[keep] = True
     log(f"wrap: {int(ok.sum())}/{len(ok)} offsets from rays, {int(inner.sum())} interior verts kept on the body")
     d = harmonic_fill(d, ok, nb)
     d = smooth(d, nb, ~inner, iterations=2, factor=0.5)
@@ -532,7 +539,6 @@ def wrap(obj, hp, log=print, repair_rounds=0):
     # a sock, the cleft fills in) and rays are cast from the smooth base.
     # Vertices next to the socket / mouth bags stay put (lid and lip lines).
     import costume
-    keep = dilate(inner, nb, rings=2)
     w = np.clip((d - 0.003) / 0.004, 0.0, 1.0)
     if costume.REGIONS:
         rid = costume.region_id(np.asarray(P, np.float32), LM["J"])

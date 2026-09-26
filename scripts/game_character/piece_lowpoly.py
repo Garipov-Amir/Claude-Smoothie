@@ -38,6 +38,49 @@ def box_cage(name, frame):
     return o
 
 
+def dome_cage(name, frame, n_around=8, n_rings=2):
+    """Coarse closed shell for a dome piece (pauldron): outer cap, rolled rim,
+    inner cap — subdivided and projected like the box cage. QuadriFlow can't
+    resolve two surfaces a few mm apart; a thin shell needs its topology
+    laid out."""
+    cc, a, r_in, t, cap = frame
+    a = np.asarray(a, np.float64)
+    u = np.cross(a, [0, 1.0, 0])
+    u = u / np.linalg.norm(u)
+    v = np.cross(a, u)
+    bm = bmesh.new()
+
+    def ring(radius, th):
+        return [bm.verts.new((np.asarray(cc) + radius * (np.cos(th) * a + np.sin(th) * (np.cos(ph) * u + np.sin(ph) * v))).tolist())
+                for ph in np.linspace(0, 2 * np.pi, n_around, endpoint=False)]
+    ths = [cap * (k + 1) / n_rings for k in range(n_rings)]
+    outer_pole = bm.verts.new((np.asarray(cc) + (r_in + t) * a).tolist())
+    inner_pole = bm.verts.new((np.asarray(cc) + r_in * a).tolist())
+    outer = [ring(r_in + t, th) for th in ths]
+    inner = [ring(r_in, th) for th in ths]
+    n = n_around
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new([outer_pole, outer[0][i], outer[0][j]])
+        bm.faces.new([inner_pole, inner[0][j], inner[0][i]])
+        for k in range(n_rings - 1):
+            bm.faces.new([outer[k][i], outer[k + 1][i], outer[k + 1][j], outer[k][j]])
+            bm.faces.new([inner[k][j], inner[k + 1][j], inner[k + 1][i], inner[k][i]])
+        bm.faces.new([outer[-1][i], inner[-1][i], inner[-1][j], outer[-1][j]])    # rim
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.verts.index_update()
+    shell = np.zeros(len(bm.verts), np.float32)          # 1 outer surface, 0 inner
+    for v in [outer_pole] + [x for r in outer for x in r]:
+        shell[v.index] = 1.0
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    me.attributes.new("shell", "FLOAT", "POINT").data.foreach_set("value", shell)
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
 def remesh(hp, name, faces, log=print):
     """Quad remesh of a high-poly piece to ~`faces` quads (QuadriFlow),
     snapped back onto the high-poly."""
@@ -71,6 +114,9 @@ def prepare(piece, hp, prefix, log=print):
     """-> (object to unwrap with the body, state for finish())."""
     import retopo
     name = piece["name"]
+    if piece["lowpoly"] == "dome":
+        pc = dome_cage(f"{prefix}_{name}_LOD4", piece["frame"])
+        return pc, ("dome", pc)
     if piece["lowpoly"] == "box":
         pc = box_cage(f"{prefix}_{name}_LOD4", piece["frame"])
         retopo.project_nearest(pc, retopo.Surface(hp), iters=1)
@@ -86,7 +132,42 @@ def finish(piece, hp, prefix, state):
     kind, o = state
     name = piece["name"]
     out = {}
-    if kind == "box":
+    if kind == "dome":
+        # simple (non-smoothing) subdivision, then every vertex back onto its
+        # own sphere: a thin shell stays two clean surfaces a few mm apart
+        cc, a, r_in, t, cap = piece["frame"]
+        cc, a = np.asarray(cc, np.float64), np.asarray(a, np.float64)
+        out["LOD4"] = o
+        prev = o
+        for level in ("LOD2", "LOD0"):
+            c = prev.copy()
+            c.data = prev.data.copy()
+            c.name = c.data.name = f"{prefix}_{name}_{level}"
+            bpy.context.scene.collection.objects.link(c)
+            m = c.modifiers.new("Sub", "SUBSURF")
+            m.subdivision_type = "SIMPLE"
+            m.levels = 1
+            U.select_only([c])
+            bpy.ops.object.modifier_apply(modifier=m.name)
+            co = np.array([v.co[:] for v in c.data.vertices])
+            sh = np.zeros(len(co), np.float32)
+            c.data.attributes["shell"].data.foreach_get("value", sh)
+            d = co - cc
+            r = np.linalg.norm(d, axis=1)
+            dh = d / np.maximum(r, 1e-9)[:, None]
+            # the layer attribute (1 outer, 0 inner, in between on the rim)
+            # says which sphere a vertex belongs to — a chord's sag can exceed
+            # the shell thickness, so neither radius nor normal can tell
+            rim = (sh > 0.02) & (sh < 0.98)
+            side = dh[rim] - (dh[rim] @ a)[:, None] * a
+            side /= np.maximum(np.linalg.norm(side, axis=1), 1e-9)[:, None]
+            dh[rim] = np.cos(cap) * a + np.sin(cap) * side
+            co = cc + dh * (r_in + t * sh)[:, None]
+            c.data.vertices.foreach_set("co", co.reshape(-1))
+            c.data.update()
+            out[level] = c
+            prev = c
+    elif kind == "box":
         out["LOD4"] = o
         prev = o
         surf = retopo.Surface(hp)
