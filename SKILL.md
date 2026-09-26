@@ -1,6 +1,6 @@
 ---
 name: blender-stylized-3d
-description: Generate stylized 3D models in Blender from a text description or a reference photo — hand-painted-PBR by default, also supports low-poly/toon looks. Use when the user asks to create, model, or texture a 3D asset, "make a 3D model of X", "turn this photo into a 3D model", or wants a stylized (non-photoreal) Blender render or .glb/.blend export.
+description: Generate 3D models in Blender from a text description or a reference photo — stylized hand-painted-PBR props/creatures (Workflows A/B), or a full game-ready realistic character (Workflow C: SDF sculpt, designed quad retopology, UVs, high→low normal/AO/curvature bakes, PBR texture set, UE-compatible skeleton + skinning + walk cycle, LOD0–LOD4, FBX/GLB export with a validation report). Use when the user asks to create, model, texture, rig or export a 3D asset/character, "make a 3D model of X", "turn this photo into a 3D model", or wants a .blend/.fbx/.glb.
 ---
 
 # Blender stylized 3D generation
@@ -23,13 +23,13 @@ Default style is **hand-painted PBR**: `bpy_stylized_kit.build_hand_painted_mate
 fakes painted-texture look via baked-in AO cavity shading, warm/cool fresnel rim
 tint, and noise-driven color/roughness variation — no image textures required.
 
-**Honest fidelity ceiling**: this produces stylized blockout-tier assets —
-correct silhouette/proportions, clean continuous topology, procedural
-materials. It does not produce hand-sculpted/hand-painted/rigged
-production-character quality (the kind you'd find on Sketchfab from a
-professional character artist) — that needs digital sculpting, manual
-retopology, and hand texture painting, a different pipeline entirely.
-Don't oversell output from this skill as more than what it is.
+**Honest fidelity ceiling**: Workflows A/B produce stylized blockout-tier
+assets — correct silhouette/proportions, clean continuous topology,
+procedural materials. For a *game-ready character* use **Workflow C**
+below: it runs the full production chain (sculpt → retopo → UV → bake →
+texture → rig → LOD → export) and passes engine-readiness checks, but the
+sculpt is primitive-based, so faces read stylized-realistic rather than as a
+portrait-level sculpt by a human artist. Say so; don't oversell.
 
 ## Prerequisites
 
@@ -175,6 +175,36 @@ neural reconstruction, consistent with Workflow B.
    across all of them — or the carve comes out wrong (often just empty).
 2. `carved = k.carve_from_silhouettes([{"mask": "<out>/prep/silhouette_front.png", "axis": "front"}, {"mask": "<out>/prep/silhouette_side.png", "axis": "side"}], size=2.0)`
 3. Same as Workflow B from here: material from `palette.json`, render and view before finishing. Output is blocky at the silhouette edges by default — raise `resolution` or follow with `add_bevel`/`add_subsurf` for a softer look.
+
+## Workflow C — game-ready realistic character (full production pipeline)
+
+Use when the ask is a character that has to *work in a game*: clean
+deforming topology, UVs, baked maps, PBR textures, skeleton + weights,
+LODs, FBX/GLB. Full technique, numbers and pitfalls:
+`reference/game_ready_character.md` — read it before changing anything.
+
+```bash
+pip install bpy scikit-image scipy pillow        # if no Blender install; or use Blender's python
+python scripts/game_character/build_character.py <out> --res 2048   # ~5 min on 4 cores
+python scripts/game_character/verify_export.py <out>/export/SK_Character.glb
+cat <out>/export/report.json                                          # validation numbers
+```
+
+Stages (each re-runnable with `--from <stage>`): `highpoly` (SDF sculpt,
+4.3 M tris) → `lowpoly` (designed quad cage + LOD2/LOD0 subdivisions, UVs)
+→ `bake` (normal/AO/curvature/position) → `textures` (BaseColor, Normal
+GL/DX, ORM, Height) → `lookdev` (engine-style material, eyes) → `rig`
+(63-bone UE-named skeleton, heat skinning, walk cycle) → `export`
+(LOD0–4, FBX per engine, GLB, `report.json`).
+
+To make a *different* character, edit the data, not the pipeline:
+proportions/anatomy in `humanoid.py` (`skeleton()`, `build_body`,
+`HEAD_PROFILE`), outfit in `costume.py` (garment masks + `region_id` +
+`dress`), materials in `texture.py` (recipes per region). The retopo rows
+(`retopo.TRUNK_ROWS`, limb rows) should sit on hems and joints of the new
+design. Always look at: the clay sheet of the high-poly, the true-edge
+wireframe close-ups (head, hands, crotch, shoulder), the checker render,
+the textured turnaround, the walk frames + stress poses, and the report.
 
 ## Style toolkit
 

@@ -3,3 +3,10 @@ Pillow>=10.0
 
 # Only needed for the optional live-viewing connector, mcp_server/server.py
 mcp>=1.0
+
+# Workflow C (game-ready character pipeline, scripts/game_character/)
+# runs under Blender's python or the bpy wheel; needs these next to it:
+scikit-image>=0.22   # marching cubes for the SDF sculpt
+scipy>=1.11          # sparse solve (skinning), KD-trees, image filters
+numpy>=1.26
+# bpy>=4.2           # only if there is no Blender install (pip wheel of Blender itself)

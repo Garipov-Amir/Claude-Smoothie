@@ -1,0 +1,294 @@
+# Game-ready character pipeline (Workflow C)
+
+`scripts/game_character/` — a complete, code-only production pipeline for a
+realistic humanoid game character: sculpt → retopology → UVs → bake →
+PBR textures → skeleton + skin + animation → LOD chain → FBX/GLB export →
+validation report. Every stage is a plain Python module driving Blender
+(`bpy`), so it runs headless, on CI, or in a cloud container.
+
+```bash
+# one command, all stages (≈4–6 min at 2K textures on 4 CPU cores)
+python scripts/game_character/build_character.py <out_dir> --res 2048
+# re-run from any stage after an edit
+python scripts/game_character/build_character.py <out_dir> --from bake --res 4096
+# check the shipped files stand on their own
+python scripts/game_character/verify_export.py <out_dir>/export/SK_Character.glb
+```
+
+Runs under Blender's bundled Python *or* the `bpy` pip wheel (`pip install bpy
+scikit-image scipy pillow`) — the pip route is what works on machines with no
+Blender install. EEVEE/Workbench need an EGL/OpenGL context that headless
+containers usually lack; everything here renders and bakes with **Cycles on
+the CPU**.
+
+## Stage map
+
+| Stage | Module(s) | Output | Senior checklist it satisfies |
+|---|---|---|---|
+| highpoly | `sdf.py`, `humanoid.py`, `costume.py`, `build_highpoly.py` | `highpoly.npz` (~4.3 M tris) | forms → planes → details; cloth with thickness and hems; ~1 mm detail |
+| lowpoly | `retopo.py`, `uvs.py`, `build_lowpoly.py` | `lowpoly.blend` (cage, LOD2, LOD0 with UVs) | 100 % quads, loops on joints, face loops, seams hidden, texel density |
+| bake | `bake.py`, `build_bake.py` | `bakes_<res>.npz` | synced tangents, cage/ray distance, dilation, bake cleanup |
+| textures | `texture.py`, `build_textures.py` | `textures/*.png` | PBR ranges, ID-driven smart materials, detail normals, ORM packing |
+| lookdev | `lookdev.py`, `eyes.py`, `build_lookdev.py` | `lookdev.blend` | engine-style material (textures only), separate eyes |
+| rig | `rig.py`, `build_rig.py` | `rigged.blend` | UE-compatible skeleton, twist bones, ≤4 influences, test walk |
+| export | `lods.py`, `build_export.py`, `verify_export.py` | `export/*.fbx`, `*.glb`, `report.json` | LOD0–LOD4, per-engine files, automated validation |
+
+---
+
+## 1. Sculpt — SDF "digital clay" (`sdf.py`, `humanoid.py`, `costume.py`)
+
+A code-only stand-in for ZBrush. The model is an ordered list of operations
+(smooth union / smooth subtraction / intersection / arbitrary field edits)
+that can be evaluated on any grid.
+
+- **Primitives**: oriented ellipsoids (muscle masses, fat pads), round cones
+  (limbs, fingers, bones), round boxes (buckle, pouch, soles), tori (boot
+  cuff), `Custom` (any distance function, e.g. eyelids, sole outline, the
+  head loft).
+- **Smooth booleans** (polynomial smin, blend radius `k`) make masses flow into
+  each other like clay. Rule of thumb: `k` ≈ 30–60 % of the smaller form's
+  radius for muscles, 2–5 mm for crisp anatomy (lips, lids, ear folds).
+- **Anatomy order**: skeleton landmarks → big masses (ribcage, pelvis,
+  cranium) → muscles on top (pecs, lats, deltoids, biceps/triceps, quads,
+  hamstrings, calves) → carves (eye sockets, spine groove, nostrils).
+- **Head = planes first**: a loft of horizontal superellipse sections driven
+  by profile curves (front-view width, side-view front and back silhouettes,
+  "boxiness" per section — `HEAD_PROFILE`). Stacking ellipsoids for a head
+  does not converge; silhouettes-first does. Features (brow, nose, lips,
+  eyelids, ears, jaw corner, cheek pads) go on top.
+- **Eyelids** are a sphere slightly larger than the eyeball with an
+  almond-shaped opening cut through it along the view axis — gives the lid
+  margin real thickness, which is what catches light.
+- **Cloth = offset shells**: inside a garment's region mask the field is
+  lowered by thickness + ease, so the surface grows outward; the mask's
+  ~1–2 mm falloff at hems/cuffs/neckline creates the ledge a bake turns into a
+  crisp layered edge. Garments stack (shirt → trousers → jerkin → belt).
+- **Folds** are displacement in garment-local coordinates (distance along the
+  limb × angle around it, `tube_coords`), with **ridged noise stretched around
+  the limb** and amplitude concentrated where cloth compresses: inner elbow,
+  back of the knee, stacking above cuffs/boot tops. Pure sine folds read as
+  corrugated cardboard — don't.
+- **Hair** is a sculpted "hair cap": offset above a hairline curve (by azimuth
+  around the head), feathered edge, strand clumps as anisotropic noise along
+  the combing direction.
+- **Polygonization**: `sparse_polygonize` — coarse pass finds surface bricks,
+  only those are evaluated at 1–1.2 mm (in parallel), marching cubes per
+  brick, welded. A whole clothed character at 1.2 mm ≈ 4.3 M triangles in
+  ~2 min / < 2 GB instead of a 20+ GB dense grid.
+
+## 2. Retopology — designed, not computed (`retopo.py`)
+
+Topology must deform, so it is laid out like a manual retopo:
+
+- **Ring counts** (cage level; LOD0 doubles them): trunk + head 16, arms and
+  legs 10, fingers/thumb 4, palm 10. Denser where the eye is drawn (face >
+  hands > body): head azimuth slots are packed toward the front
+  (`HEAD_AZ`).
+- **Joint loops**: rings bracket every joint (shoulder, elbow, wrist, knee,
+  ankle, finger joints) — after one subdivision that is ≥ 3 loops across each
+  bend, the minimum for clean deformation.
+- **Junction patterns** (all quads, no n-gons):
+  - *crotch*: the 16-ring torso splits into two 10-rings = 9 torso verts + one
+    crotch vertex each (the two legs share the crotch edge chain);
+  - *shoulder*: the arm plugs into a 2×3-face hole in the torso side; its
+    first ring lies on a plane steeper than perpendicular to the arm so it runs
+    over the deltoid and through the armpit;
+  - *hand*: wrist ring slots rotate 18° over the forearm so the palm ring is
+    5 dorsal + 5 palmar verts; four 4-sided finger tubes share their webbing
+    edges; the thumb grows from the palm's side face;
+  - *caps*: rings are closed with quad grids (4×4 crown, 3×2 toe), never
+    triangle fans.
+- **Face loops**: two insets around each eye (inner faces removed for the
+  eyeball, hole snapped onto the lid margin with even spacing) and one around
+  the lips, the mouth line its own loop.
+- **Placement**: cage vertices are ray-cast from inside the body along each
+  ring's slot directions, then the cage is subdivided (Catmull-Clark) and every
+  vertex is re-projected and tangentially relaxed a few times (the "relax +
+  snap" loop of retopo tools). Projection mode per region: radial from the
+  bone for limbs/trunk, nearest-point for palm/fingers/crotch.
+- **Guards**: a spike pass pulls vertices that dove into cavities (nostrils,
+  ear canal) back to the neighbor average; a collapse guard separates verts
+  that snapped onto the same point of a sharp edge — including **quad
+  diagonals**, which only become edges after triangulation.
+- **Result** (report): 100 % quads, 0 n-gons, poles only at junctions
+  (56 × valence 3, 28 × valence 5, 14 × valence 6 — identical at every
+  subdivision level), median quad-corner deviation ≈ 2°.
+
+## 3. UVs (`uvs.py`)
+
+- Seams where a character artist hides them: back of the head to the crown
+  center, neck base, torso sides (front/back split below the armpit),
+  shoulder rings, arm undersides, wrists, palmar side of hands and every
+  finger, crotch rings, inner legs, boot tops.
+- Seams are authored on the **cage**; the cage is unwrapped once (ABF) and all
+  subdivision LODs inherit the UVs, so **one texture set serves every LOD**.
+- Texel density equalized (`average_islands_scale`), then the head islands
+  get **1.6×** (the face is what players look at), then packed (margin 0.35 %
+  of the atlas ≈ 7 px at 2K / 14 px at 4K).
+- Targets: coverage 60–75 % (this layout: 63 %), zero overlap (mirrored UVs
+  would stop asymmetric wear/decals), checker test uniform on body and denser
+  on the head.
+
+## 4. Baking (`bake.py`)
+
+- **Triangulate the low-poly before baking** and ship that triangulation:
+  the engine rebuilds the same MikkTSpace tangents the map was baked with.
+- Selected-to-active, cage extrusion ~1 cm, max ray ~2.5 cm: long enough for
+  the buckle/pouch, short enough not to catch the wrong surface in armpits,
+  crotch and between fingers.
+- Maps: tangent normal (OpenGL +Y), object-space normal, AO (20 cm), curvature
+  (Cycles *pointiness* of the high-poly via an emission bake), object-space
+  **position** (float) — the key to texturing, see below.
+- **Bake cleanup** (`texture.clean_normal_bake`): texels whose tangent normal
+  points sideways/backwards (z < 0.15: a ray hit the wrong surface — nostrils,
+  under a flap) are refilled from good neighbors by normalized convolution.
+  ~0.5 % of texels on this character.
+- DirectX-convention engines (Unreal): use `*_Normal_DirectX.png` (green
+  flipped). Unity/glTF/Blender: OpenGL.
+
+## 5. PBR textures in numpy (`texture.py`)
+
+Every texel knows its 3D position (position bake), facing (object normal),
+occlusion (AO) and convexity (curvature). Smart materials are then just
+functions:
+
+- **Material ID** = `costume.region_id(P)`: the *same masks that sculpted the
+  garments*, evaluated per texel — lines up with the hems in the bake exactly,
+  like an ID map baked from high-poly vertex colors. Soft-blended at borders
+  (0.6 px) to avoid aliasing.
+- **Recipes** (albedo / roughness / metal / height):
+  - *skin*: tanned base, the three facial color zones (yellowish forehead,
+    red middle third: nose/cheeks/ears, blue-grey beard shadow), lips,
+    painted eyebrows, freckles, pores (cellular noise) in roughness + height,
+    oily T-zone (lower roughness);
+  - *linen*: plain weave in UV space at physical scale (texel size from the
+    position map), slubs, sweat/dirt at pits/collar/cuffs, AO/cavity grime;
+  - *leather* (jerkin, belt, pouch, boots): grain, wrinkles, darker cavities,
+    lighter + smoother worn edges from curvature, scratches, **stitch rows at a
+    fixed distance from the garment border measured in 3D** (KD-tree), mud
+    rising from the ground on boots;
+  - *wool twill*, *aged brass* (polished edges, tarnish in cavities,
+    metallic drops under grime), *rubber sole*.
+- **Detail normals**: the height channel → tangent-space normal (gradients in
+  UV space divided by meters-per-texel) → combined with the baked normal by
+  **Reoriented Normal Mapping**.
+- **Outputs**: `BaseColor` (sRGB), `Normal_OpenGL` / `Normal_DirectX`,
+  `ORM` (R = AO, G = roughness, B = metallic — glTF/UE packing), `Height`,
+  `SkinMask` (subsurface weight for the preview/engine), `T_Eye_BaseColor`.
+- PBR sanity: albedo never below ~0.02 or above ~0.95 sRGB, dark leather
+  0.15–0.30, skin 0.45–0.80, metals use measured reflectance with metallic 1.
+
+## 6. Skeleton, skinning, animation (`rig.py`)
+
+- **Skeleton**: UE mannequin naming (`root`, `pelvis`, `spine_01..03`,
+  `neck_01`, `head`, `clavicle/upperarm/lowerarm/hand_{l,r}`, 3 phalanges ×
+  5 fingers, `thigh/calf/foot/ball`, `upperarm/lowerarm/thigh/calf_twist_01`,
+  `eye_{l,r}`) — 63 bones, single root at the origin. Unreal's IK Retargeter and
+  Unity's Humanoid avatar map these names automatically.
+- **Roll convention**: every hinge flexes about its **local X** (Z points
+  back/dorsal). `+X` on thigh = leg back, `+X` on calf = knee bend, `−X` on
+  lowerarm/fingers = flex, `+Z` on the left upperarm lowers it from the A-pose.
+- **Skinning** = bone heat (Baran & Popović 2007) implemented directly:
+  `(L + M·H) w = M·H·p` with a clamped cotangent Laplacian, vertex areas M,
+  heat `H = c/d²` from the nearest *candidate* bone. Candidates come from the
+  retopo part labels (a thigh vertex can't be pulled by the other thigh, the
+  torso side can't be claimed by the hanging arm) — the job Pinocchio's
+  visibility test does. One sparse LU, one solve per bone: ~2 s for LOD0.
+- **Twist bones** take a linear share (up to 60 %) of their parent along the
+  segment — the candy-wrapper fix for forearm/upper-arm/thigh/calf twist.
+- **Engine cleanup**: ≤ 4 influences per vertex, weights < 0.01 pruned,
+  normalized to 1. LOD1–4 get weights by Data Transfer from LOD0 + the same
+  cleanup. Eyes are rigid-skinned to the eye bones (exported as skinned meshes
+  so eye tracking works).
+- **Test animation**: an in-place 32-frame walk (legs/arms in counter phase,
+  swing-phase knee flexion, pelvis bob + yaw, spine counter-rotation) exported
+  with the files; stress poses (arms raised, deep squat, fists) are the
+  deformation check.
+
+## 7. LODs (`lods.py`)
+
+| LOD | How | Tris (this character) | Typical screen size |
+|---|---|---|---|
+| LOD0 | cage × 2 subdivisions, projected | 43.6 k | close-up / hero |
+| LOD1 | LOD0 collapse-decimated 50 %, face + hands protected | 21.8 k | 0.5 |
+| LOD2 | cage × 1 subdivision, projected (clean quads again) | 10.9 k | 0.25 |
+| LOD3 | LOD2 decimated 50 % | 5.5 k | 0.12 |
+| LOD4 | the cage | 2.7 k | 0.06 / crowds |
+
+Eyes: 768-tri spheres on LOD0–2, 192-tri on LOD3–4. All LODs share the
+material and UV layout.
+
+## 8. Export (`build_export.py`, `verify_export.py`)
+
+- `SK_Character.fbx`: skeleton + LOD0–LOD4 + eyes named `*_LOD#` (Unity builds
+  the LODGroup automatically) + the walk take. Settings: `FBX_SCALE_ALL`,
+  −Z forward / Y up, tangent space on, no leaf bones, Y/X bone axes, no mesh
+  modifiers baked (the armature binding travels as a skin).
+- `SK_Character_LOD#.fbx`: one per LOD for Unreal's LOD import (LOD0 carries
+  the animation).
+- `SK_Character.glb`: LOD0 + eyes + skeleton + walk + textures (2K JPEG
+  color/ORM, PNG normals) for web/engine preview.
+- `verify_export.py` re-imports each file into an empty scene and checks
+  skeleton, skin, animation and embedded images survive.
+
+## 9. Validation report (`export/report.json`)
+
+Per LOD: tris/verts, quads/n-gons, non-manifold and boundary edges (eye holes
+only), degenerate faces, loose verts, UVs inside 0–1, UV coverage and overlap,
+max influences, unweighted verts, normalized weights, applied transforms.
+Source topology: quad ratio, poles by valence, quad-angle deviation.
+Skeleton: bone count, single root at origin, required humanoid bones present.
+Textures: sizes and power-of-two. Current build: all LODs 0 n-gons, 0
+non-manifold, 0 degenerate, 0 UV overlap, ≤ 4 influences, 0 unweighted.
+
+## Budgets worth knowing
+
+| Target | LOD0 tris | Textures |
+|---|---|---|
+| Mobile hero | 8–15 k | 1–2 × 1K–2K |
+| Current-gen NPC | 20–40 k | 2K–4K set |
+| Current-gen hero | 40–100 k (+ hair cards) | 2–4 × 4K sets (head separate) |
+| Cinematic | 100 k+ | UDIMs 4K–8K |
+
+## Honest limits of this pipeline
+
+- **Likeness and anatomy** are limited by primitive-based sculpting: the head
+  reads as a stylized-realistic male, not a portrait; a human sculptor still
+  wins on subtle facial anatomy.
+- **Hair** is a sculpted cap with painted strands, not hair cards/strands.
+- **Face**: closed mouth, no mouth bag/teeth/tongue, no facial rig or
+  blendshapes (a jaw/brow/lip rig or ARKit-style shape keys would be next).
+- **Materials** are procedural; realistic, but no scanned skin/fabric data.
+- **Subsurface scattering** is provided as a mask; the look depends on the
+  engine's skin shader.
+- Hard gear (buckle, pouch) is fused into the body mesh; a production asset
+  would ship them as separate pieces with their own high-poly.
+
+## Lessons learned building it (bugs worth not repeating)
+
+- **Offset surfaces clip at primitive blocks.** Cloth/hair offsets move the
+  surface up to a few cm from where a primitive put it; primitives must be
+  evaluated with a margin ≥ the edit band or the offset surface is sliced flat
+  at the block boundary (showed up as a flat "plate" on the head).
+- **A loft is not a distance field.** Superellipse sections have the right
+  zero set but a collapsing metric near the end caps; anything built on top
+  (hair offset) balloons there. Fix: true distance to dense surface samples
+  (KD-tree), sign from the implicit function, gradient-normalized value near
+  the surface.
+- **skimage marching-cubes winding is already outward** for a negative-inside
+  SDF. Flipping it inverted every high-poly normal — the tangent map came out
+  olive instead of lavender. Check the signed volume.
+- **Garment masks must exclude everything else explicitly** — the shirt mask
+  reached the underside of the chin and grew a plate there.
+- **Thighs fuse once trousers add ease**, which moves the crotch down to the
+  knees for any ray-based retopo. Carve a thigh gap in the sculpt.
+- **Adding a bmesh custom-data layer invalidates existing BMVert references.**
+  Create layers before creating geometry.
+- **Subsurf interpolates integer attributes** (part labels) — re-derive labels
+  from the nearest cage vertex afterwards.
+- **`delete(context="FACES_ONLY")` leaves wire edges**; after subdivision they
+  become loose verts and Blender's bone-heat solver fails for the whole mesh.
+- **The Cycles Wireframe node shows render triangles, not quads.** Review
+  topology with a Wireframe *modifier* on a copy.
+- **Stitches/edge effects must use 3D distance**: in UV space every island
+  seam looks like a garment border.

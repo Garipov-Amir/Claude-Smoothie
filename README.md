@@ -1,7 +1,12 @@
 # blender-stylized-3d
 
-A Claude Code skill + optional MCP connector for generating stylized 3D
-models in Blender from a text description or a reference photo. Default
+A Claude Code skill + optional MCP connector for generating 3D models in
+Blender from a text description or a reference photo — stylized props and
+creatures, and (Workflow C) a complete **game-ready realistic character**:
+sculpt → quad retopology → UVs → baked normal/AO/curvature → PBR texture set →
+UE-compatible skeleton, skinning and a walk cycle → LOD0–LOD4 → FBX/GLB with a
+validation report. See [`reference/game_ready_character.md`](reference/game_ready_character.md)
+and [`examples/game_character/`](examples/game_character/). Default
 look is hand-painted PBR (baked cavity shading, fresnel rim tint, painterly
 noise variation) — no image textures required, no external AI 3D-generation
 API, no neural image-to-3D reconstruction.
@@ -13,7 +18,8 @@ API, no neural image-to-3D reconstruction.
   render/export). See [`reference/api.md`](reference/api.md) for the full list.
 - **`scripts/image_prep.py`** — turns a photo into a palette + heightmap +
   silhouette mask using classic image processing (system Python, Pillow).
-- **`scripts/run_blender.sh`** — runs a generation script headless.
+- **`scripts/run_blender.sh`** — runs a generation script headless (Blender binary, or the `bpy` pip module).
+- **`scripts/game_character/`** — the game-ready character pipeline (Workflow C); entry point `build_character.py`.
 - **`mcp_server/`** — optional connector to drive a *live*, visible Blender
   session instead of headless batch runs. See `mcp_server/README.md`.
 
