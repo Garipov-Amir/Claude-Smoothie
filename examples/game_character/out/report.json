@@ -1,64 +1,40 @@
 {
-  "character_height_m": 1.837,
+  "character_height_m": 1.828,
   "source_topology": {
     "SK_Character_LOD0_quads": {
-      "faces": 21824,
+      "faces": 12270,
       "quad_ratio": 1.0,
       "tris": 0,
       "ngons": 0,
       "poles_by_valence": {
-        "6": 14,
-        "3": 56,
-        "5": 28
+        "5": 120,
+        "3": 136
       },
-      "quad_angle_dev_median_deg": 2.1333105495105116,
-      "quad_angle_dev_p95_deg": 24.820983031215412
-    },
-    "SK_Character_LOD2": {
-      "faces": 5456,
-      "quad_ratio": 1.0,
-      "tris": 0,
-      "ngons": 0,
-      "poles_by_valence": {
-        "6": 14,
-        "3": 56,
-        "5": 28
-      },
-      "quad_angle_dev_median_deg": 2.5573013724282276,
-      "quad_angle_dev_p95_deg": 25.07839999747251
-    },
-    "SK_Character_LOD4": {
-      "faces": 1364,
-      "quad_ratio": 1.0,
-      "tris": 0,
-      "ngons": 0,
-      "poles_by_valence": {
-        "6": 14,
-        "3": 56,
-        "5": 28
-      },
-      "quad_angle_dev_median_deg": 2.8056017438038694,
-      "quad_angle_dev_p95_deg": 33.73607082520984
+      "quad_angle_dev_median_deg": 7.906884025917051,
+      "quad_angle_dev_p95_deg": 32.66668142572981
     }
   },
   "lods": {
     "LOD0": {
-      "verts": 21848,
-      "faces": 43648,
-      "tris": 43648,
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 92,
+      "verts": 12274,
+      "faces": 24540,
+      "tris": 24540,
       "quads": 0,
       "ngons": 0,
-      "triangles": 43648,
+      "triangles": 24540,
       "non_manifold_edges": 0,
-      "boundary_edges": 48,
+      "boundary_edges": 0,
       "degenerate_faces": 0,
       "loose_verts": 0,
       "poles_by_valence": {
-        "5": 1347,
-        "6": 18889,
-        "7": 1407,
-        "8": 61,
-        "9": 2
+        "5": 1196,
+        "6": 9704,
+        "7": 1220,
+        "8": 65
       },
       "materials": [
         "M_Character"
@@ -66,7 +42,7 @@
       "scale_applied": true,
       "rotation_applied": true,
       "uv_inside_0_1": true,
-      "uv_coverage": 0.6322965621948242,
+      "uv_coverage": 0.6628141403198242,
       "uv_overlap_fraction": 0.0,
       "max_influences": 4,
       "over_limit_verts": 0,
@@ -74,26 +50,29 @@
       "weights_normalized": true
     },
     "LOD1": {
-      "verts": 10936,
-      "faces": 21824,
-      "tris": 21824,
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 15,
+      "verts": 6138,
+      "faces": 12268,
+      "tris": 12268,
       "quads": 0,
       "ngons": 0,
-      "triangles": 21824,
+      "triangles": 12268,
       "non_manifold_edges": 0,
-      "boundary_edges": 48,
+      "boundary_edges": 0,
       "degenerate_faces": 0,
       "loose_verts": 0,
       "poles_by_valence": {
-        "3": 7,
-        "5": 1567,
-        "6": 7399,
-        "7": 1385,
-        "8": 250,
-        "9": 34,
-        "10": 13,
-        "11": 1,
-        "12": 1
+        "3": 6,
+        "5": 970,
+        "6": 4165,
+        "7": 746,
+        "8": 113,
+        "9": 36,
+        "10": 10,
+        "11": 4
       },
       "materials": [
         "M_Character"
@@ -101,63 +80,39 @@
       "scale_applied": true,
       "rotation_applied": true,
       "uv_inside_0_1": true,
-      "uv_coverage": 0.6195182800292969,
-      "uv_overlap_fraction": 1.847256516197361e-05,
-      "max_influences": 4,
-      "over_limit_verts": 0,
-      "unweighted_verts": 0,
-      "weights_normalized": true
-    },
-    "LOD2": {
-      "verts": 5468,
-      "faces": 10912,
-      "tris": 10912,
-      "quads": 0,
-      "ngons": 0,
-      "triangles": 10912,
-      "non_manifold_edges": 0,
-      "boundary_edges": 24,
-      "degenerate_faces": 0,
-      "loose_verts": 0,
-      "poles_by_valence": {
-        "3": 8,
-        "5": 564,
-        "6": 4157,
-        "7": 574,
-        "8": 74
-      },
-      "materials": [
-        "M_Character"
-      ],
-      "scale_applied": true,
-      "rotation_applied": true,
-      "uv_inside_0_1": true,
-      "uv_coverage": 0.6319341659545898,
+      "uv_coverage": 0.6411323547363281,
       "uv_overlap_fraction": 0.0,
       "max_influences": 4,
       "over_limit_verts": 0,
       "unweighted_verts": 0,
       "weights_normalized": true
     },
-    "LOD3": {
-      "verts": 2740,
-      "faces": 5456,
-      "tris": 5456,
+    "LOD2": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 33,
+      "verts": 3070,
+      "faces": 6132,
+      "tris": 6132,
       "quads": 0,
       "ngons": 0,
-      "triangles": 5456,
+      "triangles": 6132,
       "non_manifold_edges": 0,
-      "boundary_edges": 24,
+      "boundary_edges": 0,
       "degenerate_faces": 0,
       "loose_verts": 0,
       "poles_by_valence": {
-        "3": 10,
-        "5": 529,
-        "6": 1506,
-        "7": 434,
-        "8": 132,
-        "9": 13,
-        "10": 1
+        "3": 24,
+        "5": 571,
+        "6": 1688,
+        "7": 387,
+        "8": 147,
+        "9": 36,
+        "10": 25,
+        "11": 6,
+        "12": 6,
+        "16": 2
       },
       "materials": [
         "M_Character"
@@ -165,7 +120,46 @@
       "scale_applied": true,
       "rotation_applied": true,
       "uv_inside_0_1": true,
-      "uv_coverage": 0.6050329208374023,
+      "uv_coverage": 0.6186037063598633,
+      "uv_overlap_fraction": 0.0016881136755707597,
+      "max_influences": 4,
+      "over_limit_verts": 0,
+      "unweighted_verts": 0,
+      "weights_normalized": true
+    },
+    "LOD3": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 0,
+      "verts": 1537,
+      "faces": 3066,
+      "tris": 3066,
+      "quads": 0,
+      "ngons": 0,
+      "triangles": 3066,
+      "non_manifold_edges": 0,
+      "boundary_edges": 0,
+      "degenerate_faces": 0,
+      "loose_verts": 0,
+      "poles_by_valence": {
+        "3": 10,
+        "5": 336,
+        "6": 770,
+        "7": 228,
+        "8": 72,
+        "9": 14,
+        "10": 12,
+        "12": 2,
+        "13": 6
+      },
+      "materials": [
+        "M_Character"
+      ],
+      "scale_applied": true,
+      "rotation_applied": true,
+      "uv_inside_0_1": true,
+      "uv_coverage": 0.5967845916748047,
       "uv_overlap_fraction": 0.0,
       "max_influences": 4,
       "over_limit_verts": 0,
@@ -173,25 +167,31 @@
       "weights_normalized": true
     },
     "LOD4": {
-      "verts": 1370,
-      "faces": 2728,
-      "tris": 2728,
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 14,
+      "verts": 769,
+      "faces": 1530,
+      "tris": 1530,
       "quads": 0,
       "ngons": 0,
-      "triangles": 2728,
+      "triangles": 1530,
       "non_manifold_edges": 0,
-      "boundary_edges": 12,
+      "boundary_edges": 0,
       "degenerate_faces": 0,
       "loose_verts": 0,
       "poles_by_valence": {
-        "3": 8,
-        "5": 213,
-        "6": 849,
-        "7": 175,
-        "8": 63,
-        "9": 2,
-        "10": 2,
-        "11": 2
+        "3": 16,
+        "5": 170,
+        "6": 255,
+        "7": 120,
+        "8": 58,
+        "9": 22,
+        "10": 11,
+        "11": 6,
+        "13": 2,
+        "15": 2
       },
       "materials": [
         "M_Character"
@@ -199,8 +199,8 @@
       "scale_applied": true,
       "rotation_applied": true,
       "uv_inside_0_1": true,
-      "uv_coverage": 0.6317758560180664,
-      "uv_overlap_fraction": 0.0,
+      "uv_coverage": 0.6184940338134766,
+      "uv_overlap_fraction": 0.00013260595369893514,
       "max_influences": 4,
       "over_limit_verts": 0,
       "unweighted_verts": 0,
@@ -280,13 +280,13 @@
     "SK_Character_Eyes_LOD4": 336
   },
   "files": {
-    "SK_Character.fbx": 8229324,
-    "SK_Character.glb": 7330768,
-    "SK_Character_LOD0.fbx": 4212796,
-    "SK_Character_LOD1.fbx": 2069084,
-    "SK_Character_LOD2.fbx": 1142812,
-    "SK_Character_LOD3.fbx": 669340,
-    "SK_Character_LOD4.fbx": 449052,
-    "report.json": 6376
+    "SK_Character.fbx": 5618924,
+    "SK_Character.glb": 6896324,
+    "SK_Character_LOD0.fbx": 2885852,
+    "SK_Character_LOD1.fbx": 1379212,
+    "SK_Character_LOD2.fbx": 821468,
+    "SK_Character_LOD3.fbx": 494540,
+    "SK_Character_LOD4.fbx": 352860,
+    "report.json": 6531
   }
 }
