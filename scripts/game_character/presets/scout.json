@@ -1,0 +1,23 @@
+{
+  "name": "Scout",
+  "body": {"sex": 0.0, "age": 24, "muscle": 0.6, "weight": 0.42, "height_m": 1.68,
+           "ethnicity": {"african": 0.0, "asian": 0.3, "caucasian": 0.7},
+           "modifiers": {"nose-scale-horiz-decr": 0.3, "mouth-lowerlip-volume-incr": 0.3}},
+  "skin": {"color": "#c69a7c", "lips": "#a3605a", "freckles": 0.5, "stubble": 0.0},
+  "eyes": {"iris": "#3d5a73"},
+  "hair": {"style": "short", "hairline": "rounded", "color": "#5a3521"},
+  "beard": {"style": "none"},
+  "outfit": [
+    {"type": "shirt", "sleeves": "short", "neck": "v", "material": "linen", "color": "#6f7a5a"},
+    {"type": "trousers", "length": "full", "material": "wool", "color": "#4b3c2e"},
+    {"type": "vest", "neck": "crew", "length": "waist", "material": "leather", "color": "#6a4428"},
+    {"type": "belt", "material": "leather", "color": "#2f1d12", "buckle": "silver", "width": 0.032},
+    {"type": "bracers", "material": "leather", "color": "#533420"},
+    {"type": "gloves", "fingers": "none", "material": "leather", "color": "#3a2618"},
+    {"type": "boots", "height": "ankle", "material": "leather", "color": "#3b2a1c"}
+  ],
+  "pieces": [
+    {"type": "ponytail", "length": 0.30},
+    {"type": "pouch", "side": "left", "color": "#7a5230"}
+  ]
+}

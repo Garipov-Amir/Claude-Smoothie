@@ -1,6 +1,6 @@
 ---
 name: blender-stylized-3d
-description: Generate stylized 3D models in Blender from a text description or a reference photo — hand-painted-PBR by default, also supports low-poly/toon looks. Use when the user asks to create, model, or texture a 3D asset, "make a 3D model of X", "turn this photo into a 3D model", or wants a stylized (non-photoreal) Blender render or .glb/.blend export.
+description: Generate 3D models in Blender from a text description or a reference photo — stylized hand-painted-PBR props/creatures (Workflows A/B), or a full game-ready realistic character (Workflow C: SDF sculpt on an anatomical reference body, wrapped base-mesh retopology, UVs, high→low normal/AO/curvature bakes, PBR texture set, UE-compatible skeleton + skinning + walk cycle, LOD0–LOD4, FBX/GLB export with a validation report). Use when the user asks to create, model, texture, rig or export a 3D asset/character, "make a 3D model of X", "turn this photo into a 3D model", or wants a .blend/.fbx/.glb.
 ---
 
 # Blender stylized 3D generation
@@ -23,13 +23,14 @@ Default style is **hand-painted PBR**: `bpy_stylized_kit.build_hand_painted_mate
 fakes painted-texture look via baked-in AO cavity shading, warm/cool fresnel rim
 tint, and noise-driven color/roughness variation — no image textures required.
 
-**Honest fidelity ceiling**: this produces stylized blockout-tier assets —
-correct silhouette/proportions, clean continuous topology, procedural
-materials. It does not produce hand-sculpted/hand-painted/rigged
-production-character quality (the kind you'd find on Sketchfab from a
-professional character artist) — that needs digital sculpting, manual
-retopology, and hand texture painting, a different pipeline entirely.
-Don't oversell output from this skill as more than what it is.
+**Honest fidelity ceiling**: Workflows A/B produce stylized blockout-tier
+assets — correct silhouette/proportions, clean continuous topology,
+procedural materials. For a *game-ready character* use **Workflow C**
+below: it runs the full production chain (sculpt → retopo → UV → bake →
+texture → rig → LOD → export) and passes engine-readiness checks. Anatomy
+comes from a CC0 reference body and the topology from a wrapped base mesh,
+so proportions and edge flow are right; likeness/personality, hair cards
+and facial rigging are still an artist's job. Say so; don't oversell.
 
 ## Prerequisites
 
@@ -175,6 +176,26 @@ neural reconstruction, consistent with Workflow B.
    across all of them — or the carve comes out wrong (often just empty).
 2. `carved = k.carve_from_silhouettes([{"mask": "<out>/prep/silhouette_front.png", "axis": "front"}, {"mask": "<out>/prep/silhouette_side.png", "axis": "side"}], size=2.0)`
 3. Same as Workflow B from here: material from `palette.json`, render and view before finishing. Output is blocky at the silhouette edges by default — raise `resolution` or follow with `add_bevel`/`add_subsurf` for a softer look.
+
+## Workflow C — game-ready humanoid character (full production pipeline)
+
+For any game-ready humanoid (human of any sex/age/build, or a fantasy race
+such as elf, dwarf, orc, goblin, demon) use the dedicated skill
+**[`skills/humanoid-character/SKILL.md`](skills/humanoid-character/SKILL.md)**:
+the character is a JSON spec (body sliders + MakeHuman modifiers, outfit
+layers, pieces like horns/tusks/ponytail/pauldrons, colors) and one command
+builds sculpt → wrapped watertight topology → UVs → bakes → PBR textures →
+skeleton + skin + walk → LOD0–4 → FBX/GLB + validation report.
+
+```bash
+python scripts/game_character/preview_spec.py <spec.json|preset> preview.png   # 1-2 min clay check
+python scripts/game_character/build_character.py <out> --spec <spec.json|preset> --res 2048
+```
+
+Presets: `ranger`, `scout`, `dwarf_smith`, `orc_warrior`, `horned_demon`
+(`scripts/game_character/presets/`). Spec fields:
+`skills/humanoid-character/reference/spec.md`; technique and lessons:
+`reference/game_ready_character.md`.
 
 ## Style toolkit
 

@@ -1,0 +1,85 @@
+{
+  "name": "Ranger",
+  "body": {
+    "sex": 1.0,
+    "age": 25.0,
+    "muscle": 0.725,
+    "weight": 0.5,
+    "proportions": 0.5,
+    "height_m": 1.8,
+    "ethnicity": {
+      "african": 0.0,
+      "asian": 0.0,
+      "caucasian": 1.0
+    },
+    "modifiers": {}
+  },
+  "skin": {
+    "color": "#b3876d",
+    "lips": "#9e5c57",
+    "freckles": 0.25,
+    "stubble": 0.45,
+    "roughness": 0.5
+  },
+  "eyes": {
+    "iris": "#5b6b33"
+  },
+  "hair": {
+    "style": "short",
+    "hairline": "receding",
+    "color": "#2b1d14"
+  },
+  "beard": {
+    "style": "none",
+    "color": "#2b1d14"
+  },
+  "outfit": [
+    {
+      "sleeves": "long",
+      "neck": "crew",
+      "tuck": "in",
+      "material": "linen",
+      "color": "#b3a387",
+      "thickness": 0.0048,
+      "type": "shirt"
+    },
+    {
+      "length": "full",
+      "material": "wool",
+      "color": "#40402f",
+      "thickness": 0.0055,
+      "type": "trousers"
+    },
+    {
+      "neck": "v",
+      "length": "hip",
+      "material": "leather",
+      "color": "#452a18",
+      "thickness": 0.006,
+      "type": "vest"
+    },
+    {
+      "material": "leather",
+      "color": "#361f12",
+      "buckle": "brass",
+      "width": 0.04,
+      "thickness": 0.0055,
+      "type": "belt"
+    },
+    {
+      "height": "calf",
+      "material": "leather",
+      "color": "#301f13",
+      "sole": "#2a2622",
+      "type": "boots"
+    }
+  ],
+  "pieces": [
+    {
+      "side": "right",
+      "material": "leather",
+      "color": "#6b4729",
+      "type": "pouch"
+    }
+  ]
+}

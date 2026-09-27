@@ -9,10 +9,20 @@ if [ -z "$BLENDER_BIN" ]; then
     BLENDER_BIN="$(command -v blender)"
   elif [ -x "/Applications/Blender.app/Contents/MacOS/Blender" ]; then
     BLENDER_BIN="/Applications/Blender.app/Contents/MacOS/Blender"
-  else
-    echo "error: blender not found. Install with: brew install --cask blender" >&2
-    exit 1
   fi
+fi
+
+if [ -z "$BLENDER_BIN" ]; then
+  # no Blender binary: fall back to a python that has the bpy wheel
+  # (pip install bpy) — same API, used on CI / cloud containers
+  PY="${BPY_PYTHON:-python3}"
+  if "$PY" -c "import bpy" >/dev/null 2>&1; then
+    [ "$#" -lt 1 ] && { echo "usage: run_blender.sh <script.py> [args...]" >&2; exit 1; }
+    SCRIPT="$1"; shift
+    exec "$PY" "$SCRIPT" -- "$@"
+  fi
+  echo "error: blender not found. Install with: brew install --cask blender (or pip install bpy)" >&2
+  exit 1
 fi
 
 if [ "$#" -lt 1 ]; then

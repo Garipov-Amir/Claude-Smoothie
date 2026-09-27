@@ -1,0 +1,23 @@
+{
+  "name": "Dwarf smith",
+  "body": {"sex": 1.0, "age": 58, "muscle": 0.85, "weight": 0.78, "height_m": 1.38,
+           "modifiers": {"upperlegs-height-decr": 1.0, "lowerlegs-height-decr": 0.8, "head-scale-vert-incr": 0.25,
+                         "hand-scale-incr": 0.5, "foot-scale-incr": 0.4, "nose-scale-horiz-incr": 0.6, "nose-volume-incr": 0.5,
+                         "forehead-scale-vert-decr": 0.3}},
+  "skin": {"color": "#c08a6a", "lips": "#8f5048", "freckles": 0.2, "stubble": 0.0},
+  "eyes": {"iris": "#4a6078"},
+  "hair": {"style": "bald", "hairline": "receding", "color": "#8a4a22"},
+  "beard": {"style": "long", "color": "#8a4a22"},
+  "outfit": [
+    {"type": "shirt", "sleeves": "none", "neck": "crew", "material": "linen", "color": "#9c8d72"},
+    {"type": "trousers", "length": "full", "material": "wool", "color": "#3c3a36"},
+    {"type": "vest", "neck": "v", "length": "hip", "material": "leather", "color": "#3a2415"},
+    {"type": "belt", "material": "leather", "color": "#2a1a10", "buckle": "iron", "width": 0.05},
+    {"type": "bracers", "material": "leather", "color": "#3a2415"},
+    {"type": "boots", "height": "calf", "material": "leather", "color": "#2c2016"}
+  ],
+  "pieces": [
+    {"type": "beard_long", "length": 0.16},
+    {"type": "pouch", "side": "right", "color": "#5e3e22"}
+  ]
+}

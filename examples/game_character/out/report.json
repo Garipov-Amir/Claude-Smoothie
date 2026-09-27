@@ -1,0 +1,292 @@
+{
+  "character_height_m": 1.828,
+  "source_topology": {
+    "SK_Character_LOD0_quads": {
+      "faces": 12270,
+      "quad_ratio": 1.0,
+      "tris": 0,
+      "ngons": 0,
+      "poles_by_valence": {
+        "5": 120,
+        "3": 136
+      },
+      "quad_angle_dev_median_deg": 7.906884025917051,
+      "quad_angle_dev_p95_deg": 32.66668142572981
+    }
+  },
+  "lods": {
+    "LOD0": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 92,
+      "verts": 12274,
+      "faces": 24540,
+      "tris": 24540,
+      "quads": 0,
+      "ngons": 0,
+      "triangles": 24540,
+      "non_manifold_edges": 0,
+      "boundary_edges": 0,
+      "degenerate_faces": 0,
+      "loose_verts": 0,
+      "poles_by_valence": {
+        "5": 1196,
+        "6": 9704,
+        "7": 1220,
+        "8": 65
+      },
+      "materials": [
+        "M_Character"
+      ],
+      "scale_applied": true,
+      "rotation_applied": true,
+      "uv_inside_0_1": true,
+      "uv_coverage": 0.6628141403198242,
+      "uv_overlap_fraction": 0.0,
+      "max_influences": 4,
+      "over_limit_verts": 0,
+      "unweighted_verts": 0,
+      "weights_normalized": true
+    },
+    "LOD1": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 15,
+      "verts": 6138,
+      "faces": 12268,
+      "tris": 12268,
+      "quads": 0,
+      "ngons": 0,
+      "triangles": 12268,
+      "non_manifold_edges": 0,
+      "boundary_edges": 0,
+      "degenerate_faces": 0,
+      "loose_verts": 0,
+      "poles_by_valence": {
+        "3": 6,
+        "5": 970,
+        "6": 4165,
+        "7": 746,
+        "8": 113,
+        "9": 36,
+        "10": 10,
+        "11": 4
+      },
+      "materials": [
+        "M_Character"
+      ],
+      "scale_applied": true,
+      "rotation_applied": true,
+      "uv_inside_0_1": true,
+      "uv_coverage": 0.6411323547363281,
+      "uv_overlap_fraction": 0.0,
+      "max_influences": 4,
+      "over_limit_verts": 0,
+      "unweighted_verts": 0,
+      "weights_normalized": true
+    },
+    "LOD2": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 33,
+      "verts": 3070,
+      "faces": 6132,
+      "tris": 6132,
+      "quads": 0,
+      "ngons": 0,
+      "triangles": 6132,
+      "non_manifold_edges": 0,
+      "boundary_edges": 0,
+      "degenerate_faces": 0,
+      "loose_verts": 0,
+      "poles_by_valence": {
+        "3": 24,
+        "5": 571,
+        "6": 1688,
+        "7": 387,
+        "8": 147,
+        "9": 36,
+        "10": 25,
+        "11": 6,
+        "12": 6,
+        "16": 2
+      },
+      "materials": [
+        "M_Character"
+      ],
+      "scale_applied": true,
+      "rotation_applied": true,
+      "uv_inside_0_1": true,
+      "uv_coverage": 0.6186037063598633,
+      "uv_overlap_fraction": 0.0016881136755707597,
+      "max_influences": 4,
+      "over_limit_verts": 0,
+      "unweighted_verts": 0,
+      "weights_normalized": true
+    },
+    "LOD3": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 0,
+      "verts": 1537,
+      "faces": 3066,
+      "tris": 3066,
+      "quads": 0,
+      "ngons": 0,
+      "triangles": 3066,
+      "non_manifold_edges": 0,
+      "boundary_edges": 0,
+      "degenerate_faces": 0,
+      "loose_verts": 0,
+      "poles_by_valence": {
+        "3": 10,
+        "5": 336,
+        "6": 770,
+        "7": 228,
+        "8": 72,
+        "9": 14,
+        "10": 12,
+        "12": 2,
+        "13": 6
+      },
+      "materials": [
+        "M_Character"
+      ],
+      "scale_applied": true,
+      "rotation_applied": true,
+      "uv_inside_0_1": true,
+      "uv_coverage": 0.5967845916748047,
+      "uv_overlap_fraction": 0.0,
+      "max_influences": 4,
+      "over_limit_verts": 0,
+      "unweighted_verts": 0,
+      "weights_normalized": true
+    },
+    "LOD4": {
+      "watertight": true,
+      "self_intersecting_face_pairs": 0,
+      "pieces": 2,
+      "piece_contact_face_pairs": 14,
+      "verts": 769,
+      "faces": 1530,
+      "tris": 1530,
+      "quads": 0,
+      "ngons": 0,
+      "triangles": 1530,
+      "non_manifold_edges": 0,
+      "boundary_edges": 0,
+      "degenerate_faces": 0,
+      "loose_verts": 0,
+      "poles_by_valence": {
+        "3": 16,
+        "5": 170,
+        "6": 255,
+        "7": 120,
+        "8": 58,
+        "9": 22,
+        "10": 11,
+        "11": 6,
+        "13": 2,
+        "15": 2
+      },
+      "materials": [
+        "M_Character"
+      ],
+      "scale_applied": true,
+      "rotation_applied": true,
+      "uv_inside_0_1": true,
+      "uv_coverage": 0.6184940338134766,
+      "uv_overlap_fraction": 0.00013260595369893514,
+      "max_influences": 4,
+      "over_limit_verts": 0,
+      "unweighted_verts": 0,
+      "weights_normalized": true
+    }
+  },
+  "skeleton": {
+    "bone_count": 63,
+    "deform_bones": 62,
+    "single_root": true,
+    "missing_humanoid_bones": [],
+    "root_at_origin": true
+  },
+  "textures": {
+    "T_Character_BaseColor.png": {
+      "size": [
+        2048,
+        2048
+      ],
+      "power_of_two": true,
+      "mode": "RGB"
+    },
+    "T_Character_Height.png": {
+      "size": [
+        2048,
+        2048
+      ],
+      "power_of_two": true,
+      "mode": "L"
+    },
+    "T_Character_Normal_DirectX.png": {
+      "size": [
+        2048,
+        2048
+      ],
+      "power_of_two": true,
+      "mode": "RGB"
+    },
+    "T_Character_Normal_OpenGL.png": {
+      "size": [
+        2048,
+        2048
+      ],
+      "power_of_two": true,
+      "mode": "RGB"
+    },
+    "T_Character_ORM.png": {
+      "size": [
+        2048,
+        2048
+      ],
+      "power_of_two": true,
+      "mode": "RGB"
+    },
+    "T_Character_SkinMask.png": {
+      "size": [
+        2048,
+        2048
+      ],
+      "power_of_two": true,
+      "mode": "L"
+    },
+    "T_Eye_BaseColor.png": {
+      "size": [
+        512,
+        512
+      ],
+      "power_of_two": true,
+      "mode": "RGB"
+    }
+  },
+  "eyes": {
+    "SK_Character_Eyes_LOD0": 1440,
+    "SK_Character_Eyes_LOD1": 1440,
+    "SK_Character_Eyes_LOD2": 1440,
+    "SK_Character_Eyes_LOD3": 336,
+    "SK_Character_Eyes_LOD4": 336
+  },
+  "files": {
+    "SK_Character.fbx": 5618924,
+    "SK_Character.glb": 6896324,
+    "SK_Character_LOD0.fbx": 2885852,
+    "SK_Character_LOD1.fbx": 1379212,
+    "SK_Character_LOD2.fbx": 821468,
+    "SK_Character_LOD3.fbx": 494540,
+    "SK_Character_LOD4.fbx": 352860,
+    "report.json": 6531
+  }
+}
